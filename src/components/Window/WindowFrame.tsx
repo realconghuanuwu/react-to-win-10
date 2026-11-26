@@ -25,6 +25,7 @@ interface WindowFrameProps {
 
 export function WindowFrame({ win }: WindowFrameProps) {
   const activeAppId = useDesktopStore((state) => state.activeAppId);
+  const explorerStartFolderId = useDesktopStore((state) => state.explorerStartFolderId);
   const focusWindow = useDesktopStore((state) => state.focusWindow);
   const minimizeWindow = useDesktopStore((state) => state.minimizeWindow);
   const toggleMaximizeWindow = useDesktopStore((state) => state.toggleMaximizeWindow);
@@ -308,7 +309,13 @@ export function WindowFrame({ win }: WindowFrameProps) {
       ) : isExplorerApp ? (
         <FileExplorerApp
           windowId={win.id}
-          initialFolderId={win.id === 'recycle-bin' ? 'recycle-bin' : 'this-pc'}
+          initialFolderId={
+            win.id === 'recycle-bin'
+              ? 'recycle-bin'
+              : win.id === 'explorer'
+                ? explorerStartFolderId
+                : 'this-pc'
+          }
         />
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center bg-[#e6e6e6] p-6 overflow-hidden">

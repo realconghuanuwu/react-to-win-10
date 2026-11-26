@@ -17,7 +17,8 @@ const GRID_CLASSES: Record<DesktopIconSize, string> = {
 };
 
 export function Desktop() {
-  const apps = useDesktopStore((state) => state.apps);
+  const allApps = useDesktopStore((state) => state.apps);
+  const apps = allApps.filter((app) => app.showOnDesktop !== false);
   const selectedIds = useDesktopStore((state) => state.selectedIconIds);
   const isRefreshing = useDesktopStore((state) => state.isRefreshing);
   const iconSize = useDesktopStore((state) => state.iconSize);

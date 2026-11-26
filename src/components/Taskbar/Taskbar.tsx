@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Tooltip } from '@fluentui/react-components';
 import { useDesktopStore } from '../../store/useDesktopStore';
+import { StartMenu } from './StartMenu';
 import { SystemTray } from './SystemTray';
 import { Win10SearchIcon, Win10StartLogo } from './Win10Icons';
 
@@ -8,7 +9,9 @@ export function Taskbar() {
   const apps = useDesktopStore((state) => state.apps);
   const windows = useDesktopStore((state) => state.windows);
   const activeAppId = useDesktopStore((state) => state.activeAppId);
+  const isStartMenuOpen = useDesktopStore((state) => state.isStartMenuOpen);
   const toggleTaskbarApp = useDesktopStore((state) => state.toggleTaskbarApp);
+  const toggleStartMenu = useDesktopStore((state) => state.toggleStartMenu);
 
   const openIds = useMemo(() => new Set(windows.map((w) => w.id)), [windows]);
 
@@ -18,31 +21,41 @@ export function Taskbar() {
   );
 
   return (
-    <footer
-      aria-label="Windows 10 Taskbar"
-      onContextMenu={(e) => e.preventDefault()}
-      className="fixed bottom-0 left-0 right-0 h-[40px] bg-[#101010]/85 backdrop-blur-xl border-t border-white/5 flex items-center justify-between z-50"
-    >
-      <div className="flex items-center h-full">
-        <Tooltip content="Start" relationship="label" positioning="above">
-          <button
-            type="button"
-            aria-label="Start"
-            className="flex items-center justify-center w-12 h-full text-white hover:bg-white/10 hover:text-[#429ce3] active:bg-white/15 transition-colors cursor-default"
-          >
-            <Win10StartLogo />
-          </button>
-        </Tooltip>
+    <>
+      <StartMenu />
+      <footer
+        aria-label="Windows 10 Taskbar"
+        onContextMenu={(e) => e.preventDefault()}
+        className="fixed bottom-0 left-0 right-0 h-[40px] bg-[#101010]/85 backdrop-blur-xl border-t border-white/5 flex items-center justify-between z-50"
+      >
+        <div className="flex items-center h-full">
+          <Tooltip content="Start" relationship="label" positioning="above">
+            <button
+              type="button"
+              data-start-trigger="true"
+              aria-label="Start"
+              aria-expanded={isStartMenuOpen}
+              onClick={toggleStartMenu}
+              className={[
+                'flex items-center justify-center w-12 h-full hover:bg-white/10 hover:text-[#429ce3] active:bg-white/15 transition-colors cursor-default',
+                isStartMenuOpen ? 'bg-white/14 text-[#429ce3]' : 'text-white',
+              ].join(' ')}
+            >
+              <Win10StartLogo />
+            </button>
+          </Tooltip>
 
-        <Tooltip content="Type here to search" relationship="label" positioning="above">
-          <button
-            type="button"
-            aria-label="Search"
-            className="flex items-center justify-center w-12 h-full text-white hover:bg-white/10 active:bg-white/15 transition-colors cursor-default"
-          >
-            <Win10SearchIcon />
-          </button>
-        </Tooltip>
+          <Tooltip content="Type here to search" relationship="label" positioning="above">
+            <button
+              type="button"
+              data-start-trigger="true"
+              aria-label="Search"
+              onClick={toggleStartMenu}
+              className="flex items-center justify-center w-12 h-full text-white hover:bg-white/10 active:bg-white/15 transition-colors cursor-default"
+            >
+              <Win10SearchIcon />
+            </button>
+          </Tooltip>
 
         <nav aria-label="Pinned applications" className="flex items-center h-full">
           {taskbarApps.map((app) => {
@@ -83,7 +96,8 @@ export function Taskbar() {
         </nav>
       </div>
 
-      <SystemTray />
-    </footer>
+        <SystemTray />
+      </footer>
+    </>
   );
 }

@@ -30,9 +30,23 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
   const refreshStorageStats = useFileSystemStore((state) => state.refreshStorageStats);
 
   const setWindowTitle = useDesktopStore((state) => state.setWindowTitle);
+  const explorerStartFolderId = useDesktopStore((state) => state.explorerStartFolderId);
 
   const [history, setHistory] = useState<string[]>([initialFolderId]);
   const [historyIdx, setHistoryIdx] = useState(0);
+  const prevStartFolderRef = useRef(explorerStartFolderId);
+
+  useEffect(() => {
+    if (
+      windowId === 'explorer' &&
+      explorerStartFolderId !== prevStartFolderRef.current &&
+      useFileSystemStore.getState().nodes[explorerStartFolderId]
+    ) {
+      prevStartFolderRef.current = explorerStartFolderId;
+      setHistory([explorerStartFolderId]);
+      setHistoryIdx(0);
+    }
+  }, [windowId, explorerStartFolderId]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');

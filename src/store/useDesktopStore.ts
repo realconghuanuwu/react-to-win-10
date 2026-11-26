@@ -31,6 +31,8 @@ interface DesktopState {
   apps: DesktopAppItem[];
   selectedIconIds: string[];
   isRefreshing: boolean;
+  isStartMenuOpen: boolean;
+  explorerStartFolderId: string;
   iconSize: DesktopIconSize;
   showDesktopIcons: boolean;
   sortBy: DesktopSortField;
@@ -42,11 +44,13 @@ interface DesktopState {
   setSelectedIconIds: (ids: string[]) => void;
   clearSelection: () => void;
   setContextMenuPos: (pos: ContextMenuPosition | null) => void;
+  toggleStartMenu: () => void;
+  closeStartMenu: () => void;
   triggerRefresh: () => void;
   setIconSize: (size: DesktopIconSize) => void;
   toggleShowDesktopIcons: () => void;
   sortAppsByName: () => void;
-  openApp: (id: string) => void;
+  openApp: (id: string, explorerFolderId?: string) => void;
   toggleTaskbarApp: (id: string) => void;
   focusWindow: (id: string) => void;
   minimizeWindow: (id: string) => void;
@@ -89,6 +93,8 @@ export const useDesktopStore = create<DesktopState>((set) => ({
   apps: DESKTOP_APPS,
   selectedIconIds: [],
   isRefreshing: false,
+  isStartMenuOpen: false,
+  explorerStartFolderId: 'this-pc',
   iconSize: 'medium',
   showDesktopIcons: true,
   sortBy: 'default',
@@ -100,11 +106,12 @@ export const useDesktopStore = create<DesktopState>((set) => ({
   selectIcon: (id, multiSelect) =>
     set((state) => {
       if (!multiSelect) {
-        return { selectedIconIds: [id], contextMenuPos: null };
+        return { selectedIconIds: [id], contextMenuPos: null, isStartMenuOpen: false };
       }
       const exists = state.selectedIconIds.includes(id);
       return {
         contextMenuPos: null,
+        isStartMenuOpen: false,
         selectedIconIds: exists
           ? state.selectedIconIds.filter((item) => item !== id)
           : [...state.selectedIconIds, id],
@@ -113,9 +120,18 @@ export const useDesktopStore = create<DesktopState>((set) => ({
 
   setSelectedIconIds: (ids) => set({ selectedIconIds: ids }),
 
-  clearSelection: () => set({ selectedIconIds: [], contextMenuPos: null }),
+  clearSelection: () =>
+    set({ selectedIconIds: [], contextMenuPos: null, isStartMenuOpen: false }),
 
-  setContextMenuPos: (pos) => set({ contextMenuPos: pos }),
+  setContextMenuPos: (pos) => set({ contextMenuPos: pos, isStartMenuOpen: false }),
+
+  toggleStartMenu: () =>
+    set((state) => ({
+      isStartMenuOpen: !state.isStartMenuOpen,
+      contextMenuPos: null,
+    })),
+
+  closeStartMenu: () => set({ isStartMenuOpen: false }),
 
   triggerRefresh: () => {
     set({ isRefreshing: true, contextMenuPos: null });
@@ -140,13 +156,14 @@ export const useDesktopStore = create<DesktopState>((set) => ({
       contextMenuPos: null,
     })),
 
-  openApp: (id) =>
+  openApp: (id, explorerFolderId) =>
     set((state) => {
       const app = state.apps.find((item) => item.id === id);
       if (!app) return state;
 
       const nextZ = state.topZIndex + 1;
       const existing = state.windows.find((w) => w.id === id);
+      const nextStartFolder = explorerFolderId ?? state.explorerStartFolderId;
 
       if (existing) {
         return {
@@ -156,6 +173,8 @@ export const useDesktopStore = create<DesktopState>((set) => ({
           activeAppId: id,
           topZIndex: nextZ,
           contextMenuPos: null,
+          isStartMenuOpen: false,
+          explorerStartFolderId: nextStartFolder,
         };
       }
 
@@ -177,6 +196,8 @@ export const useDesktopStore = create<DesktopState>((set) => ({
         activeAppId: id,
         topZIndex: nextZ,
         contextMenuPos: null,
+        isStartMenuOpen: false,
+        explorerStartFolderId: nextStartFolder,
       };
     }),
 
@@ -302,5 +323,6 @@ export const useDesktopStore = create<DesktopState>((set) => ({
       windows: state.windows.map((w) => ({ ...w, isMinimized: true })),
       activeAppId: null,
       contextMenuPos: null,
+      isStartMenuOpen: false,
     })),
 }));
