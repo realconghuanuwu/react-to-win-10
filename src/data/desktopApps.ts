@@ -10,14 +10,14 @@ export interface DesktopAppItem {
  */
 export const DESKTOP_APPS: DesktopAppItem[] = [
   {
-    id: 'my-computer',
-    name: 'My Computer',
-    icon: '/assets/icons/my-computer.png',
+    id: 'recycle-bin',
+    name: 'Recycle Bin',
+    icon: '/assets/icons/trash-can.png',
   },
   {
-    id: 'trash-can',
-    name: 'Trash can',
-    icon: '/assets/icons/trash-can.png',
+    id: 'this-pc',
+    name: 'This PC',
+    icon: '/assets/icons/my-computer.png',
   },
   {
     id: 'explorer',
