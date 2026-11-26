@@ -1,6 +1,7 @@
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import { injectProxyBridge } from './shared/browseProxy.ts';
 
 interface ProxyRequest {
   url?: string;
@@ -13,226 +14,6 @@ interface ProxyResponse {
   statusCode: number;
   setHeader: (name: string, value: string) => void;
   end: (chunk?: string | Uint8Array) => void;
-}
-
-function injectProxyBridge(html: string, finalUrl: string): string {
-  const safeBase = finalUrl.replace(/"/g, '&quot;');
-  const bridgeScript = `
-<base href="${safeBase}">
-<script>
-(function() {
-  var BASE_URL = ${JSON.stringify(finalUrl)};
-  function postTitle() {
-    try {
-      window.parent.postMessage({ type: 'chrome-title', title: document.title || BASE_URL, url: BASE_URL }, '*');
-    } catch (e) {}
-  }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', postTitle);
-  } else {
-    postTitle();
-  }
-  window.addEventListener('load', postTitle);
-
-  document.addEventListener('click', function(e) {
-    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-    var el = e.target;
-    while (el && el.tagName !== 'A') el = el.parentElement;
-    if (!el) return;
-    var rawHref = el.getAttribute('href');
-    if (!rawHref || rawHref.startsWith('#') || rawHref.startsWith('javascript:') || rawHref.startsWith('mailto:') || rawHref.startsWith('tel:')) return;
-    try {
-      var resolved = new URL(rawHref, BASE_URL).href;
-      if (resolved.startsWith('http://') || resolved.startsWith('https://')) {
-        e.preventDefault();
-        window.parent.postMessage({
-          type: 'chrome-navigate',
-          url: resolved,
-          newTab: el.getAttribute('target') === '_blank'
-        }, '*');
-      }
-    } catch (err) {}
-  }, true);
-
-  document.addEventListener('submit', function(e) {
-    var form = e.target;
-    if (!form || form.tagName !== 'FORM') return;
-    var method = (form.getAttribute('method') || 'GET').toUpperCase();
-    if (method !== 'GET') return;
-    try {
-      var action = form.getAttribute('action') || BASE_URL;
-      var targetUrl = new URL(action, BASE_URL);
-      var data = new FormData(form);
-      data.forEach(function(value, key) {
-        if (typeof value === 'string') {
-          targetUrl.searchParams.set(key, value);
-        }
-      });
-      e.preventDefault();
-      window.parent.postMessage({ type: 'chrome-navigate', url: targetUrl.href, newTab: false }, '*');
-    } catch (err) {}
-  }, true);
-
-  var origOpen = window.open;
-  window.open = function(url) {
-    if (typeof url === 'string' && url) {
-      try {
-        var resolved = new URL(url, BASE_URL).href;
-        if (resolved.startsWith('http://') || resolved.startsWith('https://')) {
-          window.parent.postMessage({ type: 'chrome-navigate', url: resolved, newTab: true }, '*');
-          return null;
-        }
-      } catch (err) {}
-    }
-    return origOpen ? origOpen.apply(window, arguments) : null;
-  };
-
-  function toProxiedUrl(inputUrl) {
-    try {
-      if (typeof inputUrl !== 'string' || !inputUrl) return inputUrl;
-      if (inputUrl.startsWith('data:') || inputUrl.startsWith('blob:') || inputUrl.startsWith('/api/browse')) {
-        return inputUrl;
-      }
-      var resolved = new URL(inputUrl, BASE_URL).href;
-      if (resolved.startsWith('http://') || resolved.startsWith('https://')) {
-        return '/api/browse?url=' + encodeURIComponent(resolved);
-      }
-    } catch (e) {}
-    return inputUrl;
-  }
-
-  if (window.fetch) {
-    var origFetch = window.fetch;
-    window.fetch = function(input, init) {
-      try {
-        if (typeof input === 'string') {
-          input = toProxiedUrl(input);
-        } else if (input && typeof input === 'object' && typeof input.url === 'string') {
-          var proxied = toProxiedUrl(input.url);
-          if (proxied !== input.url) {
-            input = new Request(proxied, input);
-          }
-        }
-      } catch (e) {}
-      return origFetch.call(window, input, init);
-    };
-  }
-
-  if (window.XMLHttpRequest && window.XMLHttpRequest.prototype.open) {
-    var origXhrOpen = window.XMLHttpRequest.prototype.open;
-    window.XMLHttpRequest.prototype.open = function(method, url) {
-      var args = Array.prototype.slice.call(arguments);
-      if (typeof url === 'string') {
-        args[1] = toProxiedUrl(url);
-      }
-      return origXhrOpen.apply(this, args);
-    };
-  }
-
-  if (window.history) {
-    var origPush = window.history.pushState;
-    var origReplace = window.history.replaceState;
-    window.history.pushState = function(state, title, url) {
-      if (typeof url === 'string' && url) {
-        try {
-          var resolved = new URL(url, BASE_URL).href;
-          if (resolved.startsWith('http://') || resolved.startsWith('https://')) {
-            BASE_URL = resolved;
-          }
-        } catch (e) {}
-      }
-      return origPush ? origPush.call(window.history, state, title, window.location.href) : undefined;
-    };
-    window.history.replaceState = function(state, title, url) {
-      if (typeof url === 'string' && url) {
-        try {
-          var resolved = new URL(url, BASE_URL).href;
-          if (resolved.startsWith('http://') || resolved.startsWith('https://')) {
-            BASE_URL = resolved;
-          }
-        } catch (e) {}
-      }
-      return origReplace ? origReplace.call(window.history, state, title, window.location.href) : undefined;
-    };
-  }
-})();
-</script>`.trim();
-
-  // Remove existing <base> tags so ours takes precedence
-  const withoutBase = html.replace(/<base\b[^>]*>/gi, '');
-  if (/<head\b[^>]*>/i.test(withoutBase)) {
-    return withoutBase.replace(/<head\b[^>]*>/i, (match) => `${match}\n${bridgeScript}`);
-  }
-  if (/<html\b[^>]*>/i.test(withoutBase)) {
-    return withoutBase.replace(/<html\b[^>]*>/i, (match) => `${match}\n<head>${bridgeScript}</head>`);
-  }
-  return `${bridgeScript}\n${withoutBase}`;
-}
-
-interface YouTubeVideoItem {
-  videoId: string;
-  title: string;
-  channel: string;
-  views: string;
-  duration: string;
-  thumbnail: string;
-}
-
-function extractYouTubeVideos(html: string): YouTubeVideoItem[] {
-  const marker = 'var ytInitialData = ';
-  const start = html.indexOf(marker);
-  if (start === -1) return [];
-  const jsonStart = start + marker.length;
-  const end = html.indexOf(';</script>', jsonStart);
-  if (end === -1) return [];
-
-  try {
-    const data = JSON.parse(html.slice(jsonStart, end)) as unknown;
-    const results: YouTubeVideoItem[] = [];
-    const seen = new Set<string>();
-
-    const walk = (node: unknown) => {
-      if (!node || typeof node !== 'object' || results.length >= 24) return;
-      if (Array.isArray(node)) {
-        for (const item of node) walk(item);
-        return;
-      }
-      const record = node as Record<string, unknown>;
-      const renderer = record.videoRenderer as Record<string, unknown> | undefined;
-      if (renderer && typeof renderer.videoId === 'string' && !seen.has(renderer.videoId)) {
-        seen.add(renderer.videoId);
-        const titleRuns = (renderer.title as { runs?: Array<{ text?: string }> } | undefined)?.runs;
-        const title = titleRuns?.map((r) => r.text ?? '').join('') || 'YouTube Video';
-        const ownerRuns = (
-          renderer.ownerText as { runs?: Array<{ text?: string }> } | undefined
-        )?.runs;
-        const channel = ownerRuns?.map((r) => r.text ?? '').join('') || '';
-        const views =
-          (renderer.shortViewCountText as { simpleText?: string } | undefined)?.simpleText ||
-          (renderer.viewCountText as { simpleText?: string } | undefined)?.simpleText ||
-          '';
-        const duration =
-          (renderer.lengthText as { simpleText?: string } | undefined)?.simpleText || '';
-        results.push({
-          videoId: renderer.videoId,
-          title,
-          channel,
-          views,
-          duration,
-          thumbnail: `https://i.ytimg.com/vi/${renderer.videoId}/hqdefault.jpg`,
-        });
-        return;
-      }
-      for (const val of Object.values(record)) {
-        walk(val);
-      }
-    };
-
-    walk(data);
-    return results;
-  } catch {
-    return [];
-  }
 }
 
 async function handleBrowseMiddleware(
@@ -248,35 +29,17 @@ async function handleBrowseMiddleware(
     return;
   }
 
-  if (reqUrl.startsWith('/api/youtube')) {
-    const parsedReq = new URL(reqUrl, 'http://localhost');
-    const q = parsedReq.searchParams.get('q')?.trim() || 'trending music tech';
-    try {
-      const ytRes = await fetch(
-        `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`,
-        {
-          headers: {
-            'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-            'Accept-Language': 'en-US,en;q=0.9,vi;q=0.8',
-          },
-        },
-      );
-      const html = await ytRes.text();
-      const videos = extractYouTubeVideos(html);
-      res.statusCode = 200;
-      res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ videos }));
-    } catch {
-      res.statusCode = 502;
-      res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ videos: [] }));
-    }
+  if (!reqUrl.startsWith('/api/browse?')) {
+    next();
     return;
   }
 
-  if (!reqUrl.startsWith('/api/browse?')) {
-    next();
+  if ((req.method || '').toUpperCase() === 'OPTIONS') {
+    res.statusCode = 204;
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+    res.end();
     return;
   }
 
@@ -330,6 +93,14 @@ async function handleBrowseMiddleware(
     const reqContentType = req.headers?.['content-type'];
     if (typeof reqContentType === 'string') {
       headers['Content-Type'] = reqContentType;
+    }
+    if (req.headers) {
+      for (const [k, v] of Object.entries(req.headers)) {
+        const lower = k.toLowerCase();
+        if ((lower.startsWith('x-youtube-') || lower.startsWith('x-goog-')) && typeof v === 'string') {
+          headers[k] = v;
+        }
+      }
     }
 
     const upstream = await fetch(targetUrl.href, {

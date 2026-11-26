@@ -35,15 +35,6 @@ interface HistoryEntry {
   visitedAt: number;
 }
 
-interface YouTubeVideoItem {
-  videoId: string;
-  title: string;
-  channel: string;
-  views: string;
-  duration: string;
-  thumbnail: string;
-}
-
 type SearchEngine = 'bing' | 'duckduckgo' | 'google' | 'wikipedia';
 
 const BOOKMARKS_STORAGE_KEY = 'win10_chrome_bookmarks_v1';
@@ -132,23 +123,6 @@ function getFaviconUrl(url: string): string | null {
   }
 }
 
-function isYouTubeBrowseUrl(url: string): { isYouTube: boolean; query: string } {
-  try {
-    const parsed = new URL(url);
-    const host = parsed.hostname.replace(/^www\./, '');
-    if (host !== 'youtube.com' && host !== 'm.youtube.com') {
-      return { isYouTube: false, query: '' };
-    }
-    if (parsed.pathname === '/watch' || parsed.pathname.startsWith('/shorts/') || parsed.pathname.startsWith('/embed/')) {
-      return { isYouTube: false, query: '' };
-    }
-    const q = parsed.searchParams.get('search_query') || '';
-    return { isYouTube: true, query: q };
-  } catch {
-    return { isYouTube: false, query: '' };
-  }
-}
-
 function toYouTubeEmbedUrl(url: string): string | null {
   try {
     const parsed = new URL(url);
@@ -224,9 +198,6 @@ export function ChromeApp({ windowId }: ChromeAppProps) {
   const [proxyAvailable, setProxyAvailable] = useState<boolean>(false);
   const [proxyEnabled, setProxyEnabled] = useState<boolean>(true);
   const [iframeError, setIframeError] = useState<string | null>(null);
-  const [ytVideos, setYtVideos] = useState<YouTubeVideoItem[]>([]);
-  const [ytQuery, setYtQuery] = useState<string>('');
-  const [ytLoading, setYtLoading] = useState<boolean>(false);
 
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const addressInputRef = useRef<HTMLInputElement | null>(null);
@@ -279,47 +250,6 @@ export function ChromeApp({ windowId }: ChromeAppProps) {
       activeTab.title ? `${activeTab.title} - Google Chrome` : 'Google Chrome',
     );
   }, [activeTab.id, activeTab.url, activeTab.title, setWindowTitle, windowId]);
-
-  const ytBrowseInfo = useMemo(() => isYouTubeBrowseUrl(activeTab.url), [activeTab.url]);
-
-  useEffect(() => {
-    if (!ytBrowseInfo.isYouTube || !proxyAvailable) return;
-    let cancelled = false;
-    setYtLoading(true);
-    setYtQuery(ytBrowseInfo.query);
-    fetch(`/api/youtube?q=${encodeURIComponent(ytBrowseInfo.query || 'popular music tech')}`)
-      .then((res) => res.json() as Promise<{ videos?: YouTubeVideoItem[] }>)
-      .then((data) => {
-        if (!cancelled) {
-          setYtVideos(data.videos ?? []);
-          setYtLoading(false);
-          setTabs((prev) =>
-            prev.map((t) =>
-              t.id === activeTab.id
-                ? {
-                    ...t,
-                    title: ytBrowseInfo.query
-                      ? `${ytBrowseInfo.query} - YouTube`
-                      : 'YouTube',
-                    isLoading: false,
-                  }
-                : t,
-            ),
-          );
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setYtLoading(false);
-          setTabs((prev) =>
-            prev.map((t) => (t.id === activeTab.id ? { ...t, isLoading: false } : t)),
-          );
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [ytBrowseInfo.isYouTube, ytBrowseInfo.query, proxyAvailable, activeTab.id, activeTab.reloadNonce]);
 
   const recordHistory = useCallback((url: string, title?: string) => {
     if (url.startsWith('chrome://')) return;
@@ -865,92 +795,6 @@ export function ChromeApp({ windowId }: ChromeAppProps) {
                   </span>
                 </button>
               ))}
-            </div>
-          </div>
-        ) : ytBrowseInfo.isYouTube && proxyAvailable ? (
-          <div className="flex-1 overflow-y-auto bg-[#0f0f0f] text-white flex flex-col">
-            {/* YouTube Header */}
-            <div className="sticky top-0 z-10 flex items-center gap-4 px-5 py-3 bg-[#0f0f0f]/95 border-b border-white/10">
-              <div className="flex items-center gap-1.5 font-semibold text-[16px] tracking-tight shrink-0">
-                <span className="inline-flex items-center justify-center w-7 h-5 rounded bg-[#ff0000] text-white text-[11px]">
-                  ▶
-                </span>
-                <span>YouTube</span>
-              </div>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const q = ytQuery.trim();
-                  const nextUrl = q
-                    ? `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`
-                    : 'https://www.youtube.com';
-                  navigateTab(activeTab.id, nextUrl);
-                }}
-                className="flex-1 max-w-[520px] mx-auto flex items-center bg-[#121212] border border-[#303030] rounded-full overflow-hidden"
-              >
-                <input
-                  type="text"
-                  value={ytQuery}
-                  onChange={(e) => setYtQuery(e.target.value)}
-                  placeholder="Search YouTube"
-                  className="flex-1 bg-transparent px-4 py-1.5 text-[13px] text-white outline-none placeholder:text-[#888] select-text"
-                />
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 bg-[#222222] hover:bg-[#303030] text-[13px] border-l border-[#303030]"
-                >
-                  🔍
-                </button>
-              </form>
-            </div>
-
-            {/* Video Grid */}
-            <div className="p-5">
-              {ytLoading ? (
-                <div className="flex items-center justify-center py-16 text-[13px] text-[#aaa]">
-                  Loading YouTube videos...
-                </div>
-              ) : ytVideos.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16 text-[13px] text-[#aaa] gap-3">
-                  <span>No videos found.</span>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {ytVideos.map((vid) => (
-                    <button
-                      key={vid.videoId}
-                      type="button"
-                      onClick={() =>
-                        navigateTab(
-                          activeTab.id,
-                          `https://www.youtube.com/watch?v=${encodeURIComponent(vid.videoId)}`,
-                        )
-                      }
-                      className="group flex flex-col text-left rounded-lg overflow-hidden hover:bg-white/5 p-1.5 transition-colors"
-                    >
-                      <div className="relative aspect-video w-full rounded-lg overflow-hidden bg-[#222] mb-2">
-                        <img
-                          src={vid.thumbnail}
-                          alt={vid.title}
-                          className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform"
-                        />
-                        {vid.duration && (
-                          <span className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/80 text-[11px] font-medium text-white">
-                            {vid.duration}
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[13px] font-medium text-white line-clamp-2 leading-snug mb-1">
-                        {vid.title}
-                      </div>
-                      <div className="text-[12px] text-[#aaaaaa] truncate">
-                        {vid.channel}
-                        {vid.views ? ` • ${vid.views}` : ''}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
           </div>
         ) : activeTab.url === 'chrome://history' ? (
