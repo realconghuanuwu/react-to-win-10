@@ -228,7 +228,7 @@ export function StartMenu() {
       {/* Middle Column: Alphabetical App List */}
       <div
         aria-label="All apps"
-        className="w-[238px] shrink-0 h-full overflow-y-auto px-2 py-2.5 border-r border-white/5"
+        className="win10-scroll w-[238px] shrink-0 h-full overflow-y-auto px-2 py-2.5 border-r border-white/5"
       >
         <div className="px-2 pb-1 text-[12px] text-white/80 font-normal">Recently added</div>
         <div className="space-y-0.5 mb-3">
@@ -313,7 +313,7 @@ export function StartMenu() {
       </div>
 
       {/* Right Column: Live Tiles */}
-      <div aria-label="Pinned tiles" className="flex-1 h-full overflow-y-auto p-3.5 space-y-5">
+      <div aria-label="Pinned tiles" className="win10-scroll flex-1 h-full overflow-y-auto p-3.5 space-y-5">
         {START_TILE_GROUPS.map((group) => (
           <div key={group.title}>
             <div className="text-[12.5px] font-normal text-white/90 mb-2">{group.title}</div>

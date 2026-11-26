@@ -23,6 +23,7 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
   const storageUsedBytes = useFileSystemStore((state) => state.storageUsedBytes);
   const storageQuotaBytes = useFileSystemStore((state) => state.storageQuotaBytes);
   const createFolder = useFileSystemStore((state) => state.createFolder);
+  const createTextFile = useFileSystemStore((state) => state.createTextFile);
   const renameNode = useFileSystemStore((state) => state.renameNode);
   const deleteNodes = useFileSystemStore((state) => state.deleteNodes);
   const restoreNodes = useFileSystemStore((state) => state.restoreNodes);
@@ -31,6 +32,7 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
 
   const setWindowTitle = useDesktopStore((state) => state.setWindowTitle);
   const explorerStartFolderId = useDesktopStore((state) => state.explorerStartFolderId);
+  const openNotepadFile = useDesktopStore((state) => state.openNotepadFile);
 
   const [history, setHistory] = useState<string[]>([initialFolderId]);
   const [historyIdx, setHistoryIdx] = useState(0);
@@ -152,6 +154,8 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
         if (a.kind !== b.kind) {
           if (a.kind === 'drive') return 1;
           if (b.kind === 'drive') return -1;
+          if (a.kind === 'file') return 1;
+          if (b.kind === 'file') return -1;
         }
         return a.name.localeCompare(b.name);
       });
@@ -192,6 +196,27 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
     if (createdNode) {
       setRenamingId(createdId);
       setRenameDraft(createdNode.name);
+    }
+  };
+
+  const handleCreateNewTextFile = () => {
+    if (!canCreateFolder) return;
+    const createdId = createTextFile(currentFolderId);
+    if (!createdId) return;
+    setSelectedIds([createdId]);
+    const createdNode = useFileSystemStore.getState().nodes[createdId];
+    if (createdNode) {
+      setRenamingId(createdId);
+      setRenameDraft(createdNode.name);
+    }
+  };
+
+  const handleOpenNode = (item: FsNode) => {
+    if (currentFolderId === 'recycle-bin') return;
+    if (item.kind === 'file') {
+      openNotepadFile(item.id);
+    } else {
+      navigateTo(item.id);
     }
   };
 
@@ -310,9 +335,7 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
         }}
         onDoubleClick={(e) => {
           e.stopPropagation();
-          if (currentFolderId !== 'recycle-bin') {
-            navigateTo(item.id);
-          }
+          handleOpenNode(item);
         }}
         onContextMenu={(e) => handlePaneContextMenu(e, item.id)}
         className={[
@@ -345,7 +368,9 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
           ) : (
             <div className="text-[12.5px] text-white truncate">{item.name}</div>
           )}
-          <div className="text-[11px] text-[#999999]">File folder</div>
+          <div className="text-[11px] text-[#999999]">
+            {item.kind === 'file' ? 'Text Document' : 'File folder'}
+          </div>
         </div>
       </div>
     );
@@ -412,6 +437,20 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
             >
               <img src="/assets/icons/folder-win10.png" alt="" className="w-4 h-4 object-contain" />
               <span>New folder</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={!canCreateFolder}
+              title={canCreateFolder ? 'Create a new text document' : 'Open a drive or folder to create a file'}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleCreateNewTextFile();
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-1 text-[12px] border border-transparent enabled:hover:bg-[#333333] enabled:hover:border-[#4d4d4d] disabled:opacity-40 cursor-default"
+            >
+              <img src="/assets/icons/txt-file.svg" alt="" className="w-4 h-4 object-contain" />
+              <span>New Text Document</span>
             </button>
 
             <button
@@ -529,7 +568,7 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
         <aside
           aria-label="Folder tree"
           onClick={(e) => e.stopPropagation()}
-          className="w-[225px] shrink-0 bg-[#191919] border-r border-[#2d2d2d] overflow-y-auto py-1.5"
+          className="win10-dark-scroll w-[225px] shrink-0 bg-[#191919] border-r border-[#2d2d2d] overflow-y-auto py-1.5"
         >
           {/* Quick access */}
           <div>
@@ -591,7 +630,7 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
         <section
           aria-label="Folder contents"
           onContextMenu={(e) => handlePaneContextMenu(e, null)}
-          className="flex-1 bg-[#191919] overflow-y-auto p-4"
+          className="win10-dark-scroll flex-1 bg-[#191919] overflow-y-auto p-4"
         >
           {currentFolderId === 'this-pc' ? (
             <div className="space-y-5">
@@ -771,7 +810,8 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
                 <button
                   type="button"
                   onClick={() => {
-                    navigateTo(contextMenu.targetNodeId!);
+                    const target = nodes[contextMenu.targetNodeId!];
+                    if (target) handleOpenNode(target);
                     setContextMenu(null);
                   }}
                   className="w-full text-left px-3 py-1 hover:bg-[#414141] cursor-default"
@@ -825,10 +865,24 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
                   handleCreateNewFolder();
                   setContextMenu(null);
                 }}
-                className="w-full text-left px-3 py-1 enabled:hover:bg-[#414141] disabled:text-[#777777] cursor-default"
+                className="w-full flex items-center gap-2 text-left px-3 py-1 enabled:hover:bg-[#414141] disabled:text-[#777777] cursor-default"
               >
-                New folder
+                <img src="/assets/icons/folder-win10.png" alt="" className="w-3.5 h-3.5 object-contain" />
+                <span>New folder</span>
               </button>
+              <button
+                type="button"
+                disabled={!canCreateFolder}
+                onClick={() => {
+                  handleCreateNewTextFile();
+                  setContextMenu(null);
+                }}
+                className="w-full flex items-center gap-2 text-left px-3 py-1 enabled:hover:bg-[#414141] disabled:text-[#777777] cursor-default"
+              >
+                <img src="/assets/icons/txt-file.svg" alt="" className="w-3.5 h-3.5 object-contain" />
+                <span>New Text Document</span>
+              </button>
+              <div className="h-px bg-[#4d4d4d] my-1 mx-2" />
               <button
                 type="button"
                 onClick={() => {

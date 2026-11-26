@@ -1,4 +1,4 @@
-export type FsNodeKind = 'root' | 'drive' | 'folder' | 'bin';
+export type FsNodeKind = 'root' | 'drive' | 'folder' | 'file' | 'bin';
 
 export interface FsNode {
   id: string;
@@ -6,6 +6,7 @@ export interface FsNode {
   name: string;
   kind: FsNodeKind;
   icon: string;
+  content?: string;
   isSystem?: boolean;
   createdAt: number;
   modifiedAt: number;

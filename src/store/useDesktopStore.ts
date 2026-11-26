@@ -137,6 +137,8 @@ interface DesktopState {
   isTaskViewOpen: boolean;
   isPeekingDesktop: boolean;
   explorerStartFolderId: string;
+  notepadActiveFileId: string | null;
+  notepadOpenNonce: number;
   iconSize: DesktopIconSize;
   showDesktopIcons: boolean;
   sortBy: DesktopSortField;
@@ -170,6 +172,7 @@ interface DesktopState {
   setRenamingIconId: (id: string | null) => void;
   renameShortcut: (id: string, newLabel: string) => void;
   openApp: (id: string, explorerFolderId?: string) => void;
+  openNotepadFile: (fileId: string | null) => void;
   toggleTaskbarApp: (id: string) => void;
   focusWindow: (id: string) => void;
   minimizeWindow: (id: string) => void;
@@ -258,6 +261,8 @@ export const useDesktopStore = create<DesktopState>((set) => ({
   isTaskViewOpen: false,
   isPeekingDesktop: false,
   explorerStartFolderId: 'this-pc',
+  notepadActiveFileId: null,
+  notepadOpenNonce: 0,
   iconSize: 'medium',
   showDesktopIcons: true,
   sortBy: 'default',
@@ -541,6 +546,57 @@ export const useDesktopStore = create<DesktopState>((set) => ({
         contextMenuPos: null,
         isStartMenuOpen: false,
         explorerStartFolderId: nextStartFolder,
+        notepadActiveFileId: id === 'notepad' ? null : state.notepadActiveFileId,
+      };
+    }),
+
+  openNotepadFile: (fileId) =>
+    set((state) => {
+      const app = state.apps.find((item) => item.id === 'notepad');
+      if (!app) return state;
+
+      const nextZ = state.topZIndex + 1;
+      const existing = state.windows.find((w) => w.id === 'notepad');
+
+      if (existing) {
+        return {
+          windows: state.windows.map((w) =>
+            w.id === 'notepad' ? { ...w, isMinimized: false, zIndex: nextZ } : w,
+          ),
+          activeAppId: 'notepad',
+          topZIndex: nextZ,
+          contextMenuPos: null,
+          isStartMenuOpen: false,
+          notepadActiveFileId: fileId,
+          notepadOpenNonce: state.notepadOpenNonce + 1,
+        };
+      }
+
+      const { bounds, minWidth, minHeight } = createInitialBounds(
+        'notepad',
+        state.windows.length,
+        state.taskbarSettings,
+      );
+      const newWindow: AppWindow = {
+        id: 'notepad',
+        title: 'Notepad',
+        icon: app.icon,
+        ...bounds,
+        minWidth,
+        minHeight,
+        zIndex: nextZ,
+        isMinimized: false,
+        isMaximized: false,
+      };
+
+      return {
+        windows: [...state.windows, newWindow],
+        activeAppId: 'notepad',
+        topZIndex: nextZ,
+        contextMenuPos: null,
+        isStartMenuOpen: false,
+        notepadActiveFileId: fileId,
+        notepadOpenNonce: state.notepadOpenNonce + 1,
       };
     }),
 

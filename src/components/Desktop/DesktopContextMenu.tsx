@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { findNextFreeSlot, useDesktopStore } from '../../store/useDesktopStore';
+import { findNextFreeSlot, getTaskbarInsets, useDesktopStore } from '../../store/useDesktopStore';
 import { useFileSystemStore } from '../../store/useFileSystemStore';
 import type { DesktopDisplayItem } from './DesktopIcon';
 
@@ -7,7 +7,6 @@ type SubmenuKey = 'view' | 'sort' | 'new' | null;
 
 const MENU_WIDTH = 224;
 const MENU_HEIGHT = 276;
-const TASKBAR_HEIGHT = 40;
 
 function RightChevron() {
   return (
@@ -56,6 +55,7 @@ export function DesktopContextMenu({
   const showDesktopIcons = useDesktopStore((state) => state.showDesktopIcons);
   const sortBy = useDesktopStore((state) => state.sortBy);
   const iconPositions = useDesktopStore((state) => state.iconPositions);
+  const taskbarSettings = useDesktopStore((state) => state.taskbarSettings);
   const setContextMenuPos = useDesktopStore((state) => state.setContextMenuPos);
   const triggerRefresh = useDesktopStore((state) => state.triggerRefresh);
   const setIconSize = useDesktopStore((state) => state.setIconSize);
@@ -67,6 +67,7 @@ export function DesktopContextMenu({
 
   const nodes = useFileSystemStore((state) => state.nodes);
   const createFolder = useFileSystemStore((state) => state.createFolder);
+  const createTextFile = useFileSystemStore((state) => state.createTextFile);
   const deleteNodes = useFileSystemStore((state) => state.deleteNodes);
   const emptyRecycleBin = useFileSystemStore((state) => state.emptyRecycleBin);
 
@@ -106,11 +107,12 @@ export function DesktopContextMenu({
     ? visibleItems.find((i) => i.id === contextMenuPos.targetId)
     : null;
 
-  const vw = window.innerWidth;
-  const vh = window.innerHeight - TASKBAR_HEIGHT;
+  const insets = getTaskbarInsets(taskbarSettings);
+  const vw = window.innerWidth - insets.right;
+  const vh = window.innerHeight - insets.bottom;
   const effectiveHeight = targetItem ? 180 : MENU_HEIGHT;
-  const left = Math.max(4, Math.min(contextMenuPos.x, vw - MENU_WIDTH - 4));
-  const top = Math.max(4, Math.min(contextMenuPos.y, vh - effectiveHeight - 4));
+  const left = Math.max(insets.left + 4, Math.min(contextMenuPos.x, vw - MENU_WIDTH - 4));
+  const top = Math.max(insets.top + 4, Math.min(contextMenuPos.y, vh - effectiveHeight - 4));
   const openSubmenuLeft = left + MENU_WIDTH + 185 > vw;
 
   const submenuPositionClass = openSubmenuLeft
@@ -124,9 +126,8 @@ export function DesktopContextMenu({
   const dividerClass = 'h-px bg-[#5a5a5a] my-[3px] mx-[8px]';
   const gutterClass = 'w-[24px] shrink-0 flex items-center justify-center mr-1';
 
-  const handleCreateDesktopFolder = () => {
-    const folderId = createFolder('desktop');
-    if (!folderId) return;
+  const placeNewDesktopNode = (nodeId: string | null) => {
+    if (!nodeId) return;
 
     const preferredCol = Math.max(0, Math.floor((contextMenuPos.x - 8) / cellStep.w));
     const preferredRow = Math.max(0, Math.min(maxRows - 1, Math.floor((contextMenuPos.y - 8) / cellStep.h)));
@@ -137,16 +138,24 @@ export function DesktopContextMenu({
       { col: preferredCol, row: preferredRow },
     );
 
-    setIconPosition(folderId, freeSlot);
-    setSelectedIconIds([folderId]);
-    setRenamingIconId(folderId);
+    setIconPosition(nodeId, freeSlot);
+    setSelectedIconIds([nodeId]);
+    setRenamingIconId(nodeId);
     setContextMenuPos(null);
+  };
+
+  const handleCreateDesktopFolder = () => {
+    placeNewDesktopNode(createFolder('desktop'));
+  };
+
+  const handleCreateDesktopTextFile = () => {
+    placeNewDesktopNode(createTextFile('desktop'));
   };
 
   if (targetItem) {
     const binHasItems = Object.values(nodes).some((n) => n.parentId === 'recycle-bin');
     const isRecycleBin = targetItem.id === 'recycle-bin';
-    const isDeletableFolder = Boolean(targetItem.isFolder && !targetItem.isSystem);
+    const isDeletableNode = Boolean((targetItem.isFolder || targetItem.isFile) && !targetItem.isSystem);
 
     return (
       <div
@@ -210,14 +219,14 @@ export function DesktopContextMenu({
         <button
           type="button"
           role="menuitem"
-          disabled={!isDeletableFolder}
+          disabled={!isDeletableNode}
           onClick={() => {
-            if (!isDeletableFolder) return;
+            if (!isDeletableNode) return;
             deleteNodes([targetItem.id]);
             setSelectedIconIds([]);
             setContextMenuPos(null);
           }}
-          className={isDeletableFolder ? `${rowClass} w-full` : `${disabledRowClass} w-full`}
+          className={isDeletableNode ? `${rowClass} w-full` : `${disabledRowClass} w-full`}
         >
           <div className="flex items-center">
             <span className={gutterClass} />
@@ -477,12 +486,23 @@ export function DesktopContextMenu({
               </div>
             </div>
             <div className={dividerClass} />
-            <div className={rowClass} onClick={() => setContextMenuPos(null)}>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={handleCreateDesktopTextFile}
+              className={`${rowClass} w-full`}
+            >
               <div className="flex items-center">
-                <span className={gutterClass} />
+                <span className={gutterClass}>
+                  <img
+                    src="/assets/icons/txt-file.svg"
+                    alt=""
+                    className="w-4 h-4 object-contain"
+                  />
+                </span>
                 <span>Text Document</span>
               </div>
-            </div>
+            </button>
           </div>
         )}
       </div>

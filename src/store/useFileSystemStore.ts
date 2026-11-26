@@ -156,22 +156,24 @@ export function formatStorageBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-function getUniqueFolderName(
+function getUniqueNodeName(
   nodes: Record<string, FsNode>,
   parentId: string,
-  baseName = 'New folder',
+  baseName: string,
+  extension = '',
 ): string {
   const siblingNames = new Set(
     Object.values(nodes)
       .filter((n) => n.parentId === parentId)
       .map((n) => n.name.toLowerCase()),
   );
-  if (!siblingNames.has(baseName.toLowerCase())) return baseName;
+  const fullDefault = `${baseName}${extension}`;
+  if (!siblingNames.has(fullDefault.toLowerCase())) return fullDefault;
   let index = 2;
-  while (siblingNames.has(`${baseName} (${index})`.toLowerCase())) {
+  while (siblingNames.has(`${baseName} (${index})${extension}`.toLowerCase())) {
     index += 1;
   }
-  return `${baseName} (${index})`;
+  return `${baseName} (${index})${extension}`;
 }
 
 interface FileSystemState {
@@ -181,6 +183,12 @@ interface FileSystemState {
   storageQuotaBytes: number;
   hydrate: () => Promise<void>;
   createFolder: (parentId: string, desiredName?: string) => string | null;
+  createTextFile: (
+    parentId: string,
+    desiredName?: string,
+    initialContent?: string,
+  ) => string | null;
+  updateFileContent: (id: string, content: string) => void;
   renameNode: (id: string, newName: string) => void;
   deleteNodes: (ids: string[]) => void;
   restoreNodes: (ids: string[]) => void;
@@ -229,11 +237,11 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
     createFolder: (parentId, desiredName) => {
       const state = get();
       const parent = state.nodes[parentId];
-      if (!parent || parent.kind === 'root' || parent.kind === 'bin') {
+      if (!parent || (parent.kind !== 'folder' && parent.kind !== 'drive')) {
         return null;
       }
 
-      const name = getUniqueFolderName(state.nodes, parentId, desiredName?.trim() || 'New folder');
+      const name = getUniqueNodeName(state.nodes, parentId, desiredName?.trim() || 'New folder');
       const id = `folder-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       const timestamp = Date.now();
 
@@ -254,6 +262,67 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
       const storageUsedBytes = persistNodes(nextNodes);
       set({ nodes: nextNodes, storageUsedBytes: Math.max(state.storageUsedBytes, storageUsedBytes) });
       return id;
+    },
+
+    createTextFile: (parentId, desiredName, initialContent = '') => {
+      const state = get();
+      const parent = state.nodes[parentId];
+      if (!parent || (parent.kind !== 'folder' && parent.kind !== 'drive')) {
+        return null;
+      }
+
+      const trimmed = desiredName?.trim();
+      let baseName = 'New Text Document';
+      let ext = '.txt';
+      if (trimmed) {
+        if (trimmed.toLowerCase().endsWith('.txt')) {
+          baseName = trimmed.slice(0, -4) || 'New Text Document';
+        } else {
+          baseName = trimmed;
+          ext = '.txt';
+        }
+      }
+
+      const name = getUniqueNodeName(state.nodes, parentId, baseName, ext);
+      const id = `txt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const timestamp = Date.now();
+
+      const nextNodes: Record<string, FsNode> = {
+        ...state.nodes,
+        [id]: {
+          id,
+          parentId,
+          name,
+          kind: 'file',
+          icon: '/assets/icons/txt-file.svg',
+          content: initialContent,
+          isSystem: false,
+          createdAt: timestamp,
+          modifiedAt: timestamp,
+        },
+      };
+
+      const storageUsedBytes = persistNodes(nextNodes);
+      set({ nodes: nextNodes, storageUsedBytes: Math.max(state.storageUsedBytes, storageUsedBytes) });
+      return id;
+    },
+
+    updateFileContent: (id, content) => {
+      set((state) => {
+        const target = state.nodes[id];
+        if (!target || target.kind !== 'file') return state;
+
+        const nextNodes: Record<string, FsNode> = {
+          ...state.nodes,
+          [id]: {
+            ...target,
+            content,
+            modifiedAt: Date.now(),
+          },
+        };
+        const storageUsedBytes = persistNodes(nextNodes);
+        return { nodes: nextNodes, storageUsedBytes };
+      });
     },
 
     renameNode: (id, newName) => {

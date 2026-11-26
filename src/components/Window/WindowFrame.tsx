@@ -6,6 +6,7 @@ import {
 } from '../../store/useDesktopStore';
 import { CalculatorApp } from '../Apps/CalculatorApp';
 import { FileExplorerApp } from '../Apps/FileExplorerApp';
+import { NotepadApp } from '../Apps/NotepadApp';
 import { TaskbarSettingsApp } from '../Apps/TaskbarSettingsApp';
 import { TaskManagerApp } from '../Apps/TaskManagerApp';
 
@@ -246,7 +247,7 @@ export function WindowFrame({ win }: WindowFrameProps) {
         ].join(' ')}
       >
         <div className="flex items-center gap-2 min-w-0 pr-2">
-          {isDarkApp && (
+          {(isDarkApp || win.id === 'notepad' || win.id === 'task-manager') && (
             <img
               src={win.icon}
               alt=""
@@ -315,6 +316,8 @@ export function WindowFrame({ win }: WindowFrameProps) {
 
       {win.id === 'calculator' ? (
         <CalculatorApp isActive={isActive} />
+      ) : win.id === 'notepad' ? (
+        <NotepadApp windowId={win.id} />
       ) : win.id === 'settings' ? (
         <TaskbarSettingsApp />
       ) : win.id === 'task-manager' ? (

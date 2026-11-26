@@ -6,6 +6,7 @@ export interface DesktopDisplayItem {
   name: string;
   icon: string;
   isFolder?: boolean;
+  isFile?: boolean;
   isSystem?: boolean;
 }
 

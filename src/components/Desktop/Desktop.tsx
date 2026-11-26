@@ -59,6 +59,7 @@ export function Desktop() {
   const setRenamingIconId = useDesktopStore((state) => state.setRenamingIconId);
   const renameShortcut = useDesktopStore((state) => state.renameShortcut);
   const openApp = useDesktopStore((state) => state.openApp);
+  const openNotepadFile = useDesktopStore((state) => state.openNotepadFile);
 
   const fsNodes = useFileSystemStore((state) => state.nodes);
   const renameFsNode = useFileSystemStore((state) => state.renameNode);
@@ -97,18 +98,22 @@ export function Desktop() {
         isSystem: true,
       }));
 
-    const desktopFolders: DesktopDisplayItem[] = Object.values(fsNodes)
-      .filter((node) => node.parentId === 'desktop')
+    const desktopNodes: DesktopDisplayItem[] = Object.values(fsNodes)
+      .filter(
+        (node) =>
+          node.parentId === 'desktop' && (node.kind === 'folder' || node.kind === 'file'),
+      )
       .sort((a, b) => a.createdAt - b.createdAt)
       .map((node) => ({
         id: node.id,
         name: node.name,
         icon: node.icon,
-        isFolder: true,
+        isFolder: node.kind === 'folder',
+        isFile: node.kind === 'file',
         isSystem: node.isSystem,
       }));
 
-    return [...builtIn, ...desktopFolders];
+    return [...builtIn, ...desktopNodes];
   }, [allApps, shortcutLabels, fsNodes]);
 
   const resolvedSlots = useMemo(() => {
@@ -155,7 +160,7 @@ export function Desktop() {
       } else if (e.key === 'Delete' && selectedIds.length > 0) {
         const deletable = selectedIds.filter((id) => {
           const item = desktopItems.find((i) => i.id === id);
-          return item?.isFolder && !item.isSystem;
+          return (item?.isFolder || item?.isFile) && !item.isSystem;
         });
         if (deletable.length > 0) {
           e.preventDefault();
@@ -171,19 +176,21 @@ export function Desktop() {
 
   const handleOpenItem = useCallback(
     (item: DesktopDisplayItem) => {
-      if (item.isFolder) {
+      if (item.isFile) {
+        openNotepadFile(item.id);
+      } else if (item.isFolder) {
         openApp('explorer', item.id);
       } else {
         openApp(item.id);
       }
     },
-    [openApp],
+    [openApp, openNotepadFile],
   );
 
   const handleCommitRename = useCallback(
     (id: string, value: string) => {
       const target = desktopItems.find((i) => i.id === id);
-      if (target?.isFolder) {
+      if (target?.isFolder || target?.isFile) {
         if (value.trim()) {
           renameFsNode(id, value);
         }
@@ -227,8 +234,8 @@ export function Desktop() {
       window.removeEventListener('pointerup', handlePointerUp);
 
       if (dragging) {
-        const dropLeft = upEvent.clientX - offsetX;
-        const dropTop = upEvent.clientY - offsetY;
+        const dropLeft = upEvent.clientX - offsetX - insets.left;
+        const dropTop = upEvent.clientY - offsetY - insets.top;
         const targetCol = Math.max(0, Math.round((dropLeft - PADDING) / cellStep.w));
         const targetRow = Math.max(
           0,
