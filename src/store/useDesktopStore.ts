@@ -22,10 +22,16 @@ export interface AppWindow extends WindowBounds {
   isMaximized: boolean;
 }
 
+export type DesktopIconSize = 'small' | 'medium' | 'large';
+export type DesktopSortField = 'default' | 'name';
+
 interface DesktopState {
   apps: DesktopAppItem[];
   selectedIconIds: string[];
   isRefreshing: boolean;
+  iconSize: DesktopIconSize;
+  showDesktopIcons: boolean;
+  sortBy: DesktopSortField;
   windows: AppWindow[];
   activeAppId: string | null;
   topZIndex: number;
@@ -35,6 +41,9 @@ interface DesktopState {
   clearSelection: () => void;
   setContextMenuPos: (pos: ContextMenuPosition | null) => void;
   triggerRefresh: () => void;
+  setIconSize: (size: DesktopIconSize) => void;
+  toggleShowDesktopIcons: () => void;
+  sortAppsByName: () => void;
   openApp: (id: string) => void;
   toggleTaskbarApp: (id: string) => void;
   focusWindow: (id: string) => void;
@@ -70,6 +79,9 @@ export const useDesktopStore = create<DesktopState>((set) => ({
   apps: DESKTOP_APPS,
   selectedIconIds: [],
   isRefreshing: false,
+  iconSize: 'medium',
+  showDesktopIcons: true,
+  sortBy: 'default',
   windows: [],
   activeAppId: null,
   topZIndex: 1,
@@ -101,6 +113,22 @@ export const useDesktopStore = create<DesktopState>((set) => ({
       set({ isRefreshing: false });
     }, 90);
   },
+
+  setIconSize: (iconSize) => set({ iconSize, contextMenuPos: null }),
+
+  toggleShowDesktopIcons: () =>
+    set((state) => ({
+      showDesktopIcons: !state.showDesktopIcons,
+      selectedIconIds: [],
+      contextMenuPos: null,
+    })),
+
+  sortAppsByName: () =>
+    set((state) => ({
+      apps: [...state.apps].sort((a, b) => a.name.localeCompare(b.name)),
+      sortBy: 'name',
+      contextMenuPos: null,
+    })),
 
   openApp: (id) =>
     set((state) => {

@@ -1,21 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
-import {
-  Menu,
-  MenuDivider,
-  MenuItem,
-  MenuList,
-  MenuPopover,
-  type PositioningVirtualElement,
-} from '@fluentui/react-components';
-import {
-  ArrowClockwiseRegular,
-  ArrowSortRegular,
-  DesktopRegular,
-  FolderAddRegular,
-  GridRegular,
-  PaintBrushRegular,
-} from '@fluentui/react-icons';
-import { useDesktopStore } from '../../store/useDesktopStore';
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useDesktopStore, type DesktopIconSize } from '../../store/useDesktopStore';
+import { DesktopContextMenu } from './DesktopContextMenu';
 import { DesktopIcon } from './DesktopIcon';
 
 interface MarqueeRect {
@@ -25,16 +10,22 @@ interface MarqueeRect {
   currentY: number;
 }
 
+const GRID_CLASSES: Record<DesktopIconSize, string> = {
+  small: 'grid-rows-[repeat(auto-fill,64px)] auto-cols-[68px]',
+  medium: 'grid-rows-[repeat(auto-fill,76px)] auto-cols-[74px]',
+  large: 'grid-rows-[repeat(auto-fill,94px)] auto-cols-[86px]',
+};
+
 export function Desktop() {
   const apps = useDesktopStore((state) => state.apps);
   const selectedIds = useDesktopStore((state) => state.selectedIconIds);
   const isRefreshing = useDesktopStore((state) => state.isRefreshing);
-  const contextMenuPos = useDesktopStore((state) => state.contextMenuPos);
+  const iconSize = useDesktopStore((state) => state.iconSize);
+  const showDesktopIcons = useDesktopStore((state) => state.showDesktopIcons);
   const selectIcon = useDesktopStore((state) => state.selectIcon);
   const setSelectedIconIds = useDesktopStore((state) => state.setSelectedIconIds);
   const clearSelection = useDesktopStore((state) => state.clearSelection);
   const setContextMenuPos = useDesktopStore((state) => state.setContextMenuPos);
-  const triggerRefresh = useDesktopStore((state) => state.triggerRefresh);
   const openApp = useDesktopStore((state) => state.openApp);
 
   const [marquee, setMarquee] = useState<MarqueeRect | null>(null);
@@ -48,24 +39,6 @@ export function Desktop() {
       iconRefs.current.delete(id);
     }
   }, []);
-
-  const virtualTarget = useMemo<PositioningVirtualElement | undefined>(() => {
-    if (!contextMenuPos) return undefined;
-    const { x, y } = contextMenuPos;
-    return {
-      getBoundingClientRect: () => ({
-        width: 0,
-        height: 0,
-        top: y,
-        bottom: y,
-        left: x,
-        right: x,
-        x,
-        y,
-        toJSON: () => ({}),
-      }),
-    };
-  }, [contextMenuPos]);
 
   const handleMouseDown = (e: MouseEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
@@ -142,24 +115,28 @@ export function Desktop() {
       }}
       className="relative w-full h-[calc(100vh-40px)] bg-cover bg-center bg-no-repeat overflow-hidden"
     >
-      <div
-        data-desktop-grid="true"
-        className={[
-          'grid grid-flow-col grid-rows-[repeat(auto-fill,76px)] auto-cols-[74px] gap-x-2 gap-y-0.5 p-2 h-full max-h-[min(calc(100vh-40px),656px)] w-fit content-start transition-opacity duration-75',
-          isRefreshing ? 'opacity-0' : 'opacity-100',
-        ].join(' ')}
-      >
-        {apps.map((app) => (
-          <DesktopIcon
-            key={app.id}
-            app={app}
-            isSelected={selectedIds.includes(app.id)}
-            onSelect={selectIcon}
-            onOpen={openApp}
-            registerRef={registerRef}
-          />
-        ))}
-      </div>
+      {showDesktopIcons && (
+        <div
+          data-desktop-grid="true"
+          className={[
+            'grid grid-flow-col gap-x-2 gap-y-0.5 p-2 h-full max-h-[min(calc(100vh-40px),656px)] w-fit content-start transition-opacity duration-75',
+            GRID_CLASSES[iconSize],
+            isRefreshing ? 'opacity-0' : 'opacity-100',
+          ].join(' ')}
+        >
+          {apps.map((app) => (
+            <DesktopIcon
+              key={app.id}
+              app={app}
+              iconSize={iconSize}
+              isSelected={selectedIds.includes(app.id)}
+              onSelect={selectIcon}
+              onOpen={openApp}
+              registerRef={registerRef}
+            />
+          ))}
+        </div>
+      )}
 
       {marqueeStyle && marqueeStyle.width > 3 && marqueeStyle.height > 3 && (
         <div
@@ -168,32 +145,7 @@ export function Desktop() {
         />
       )}
 
-      <Menu
-        open={Boolean(contextMenuPos)}
-        onOpenChange={(_, data) => {
-          if (!data.open) setContextMenuPos(null);
-        }}
-        positioning={{
-          target: virtualTarget,
-          position: 'below',
-          align: 'start',
-        }}
-      >
-        <MenuPopover className="!bg-[#2b2b2b] !border !border-[#454545] !rounded-none !shadow-xl !min-w-[200px] !p-1">
-          <MenuList>
-            <MenuItem icon={<GridRegular />}>View</MenuItem>
-            <MenuItem icon={<ArrowSortRegular />}>Sort by</MenuItem>
-            <MenuItem icon={<ArrowClockwiseRegular />} onClick={triggerRefresh}>
-              Refresh
-            </MenuItem>
-            <MenuDivider />
-            <MenuItem icon={<FolderAddRegular />}>New</MenuItem>
-            <MenuDivider />
-            <MenuItem icon={<DesktopRegular />}>Display settings</MenuItem>
-            <MenuItem icon={<PaintBrushRegular />}>Personalize</MenuItem>
-          </MenuList>
-        </MenuPopover>
-      </Menu>
+      <DesktopContextMenu />
     </div>
   );
 }
