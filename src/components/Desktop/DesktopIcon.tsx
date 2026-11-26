@@ -5,10 +5,17 @@ interface DesktopIconProps {
   app: DesktopAppItem;
   isSelected: boolean;
   onSelect: (id: string, multiSelect: boolean) => void;
+  onOpen: (id: string) => void;
   registerRef: (id: string, el: HTMLButtonElement | null) => void;
 }
 
-export function DesktopIcon({ app, isSelected, onSelect, registerRef }: DesktopIconProps) {
+export function DesktopIcon({
+  app,
+  isSelected,
+  onSelect,
+  onOpen,
+  registerRef,
+}: DesktopIconProps) {
   const handleClick = (e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
     onSelect(app.id, e.ctrlKey || e.metaKey);
@@ -19,6 +26,10 @@ export function DesktopIcon({ app, isSelected, onSelect, registerRef }: DesktopI
       ref={(el) => registerRef(app.id, el)}
       type="button"
       onClick={handleClick}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        onOpen(app.id);
+      }}
       onContextMenu={(e) => {
         e.stopPropagation();
         onSelect(app.id, false);

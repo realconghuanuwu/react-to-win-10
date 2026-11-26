@@ -15,7 +15,7 @@ import {
   GridRegular,
   PaintBrushRegular,
 } from '@fluentui/react-icons';
-import { DESKTOP_APPS } from '../../data/desktopApps';
+import { useDesktopStore } from '../../store/useDesktopStore';
 import { DesktopIcon } from './DesktopIcon';
 
 interface MarqueeRect {
@@ -26,10 +26,18 @@ interface MarqueeRect {
 }
 
 export function Desktop() {
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const apps = useDesktopStore((state) => state.apps);
+  const selectedIds = useDesktopStore((state) => state.selectedIconIds);
+  const isRefreshing = useDesktopStore((state) => state.isRefreshing);
+  const contextMenuPos = useDesktopStore((state) => state.contextMenuPos);
+  const selectIcon = useDesktopStore((state) => state.selectIcon);
+  const setSelectedIconIds = useDesktopStore((state) => state.setSelectedIconIds);
+  const clearSelection = useDesktopStore((state) => state.clearSelection);
+  const setContextMenuPos = useDesktopStore((state) => state.setContextMenuPos);
+  const triggerRefresh = useDesktopStore((state) => state.triggerRefresh);
+  const openApp = useDesktopStore((state) => state.openApp);
+
   const [marquee, setMarquee] = useState<MarqueeRect | null>(null);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null);
   const iconRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -39,14 +47,6 @@ export function Desktop() {
     } else {
       iconRefs.current.delete(id);
     }
-  }, []);
-
-  const handleSelectIcon = useCallback((id: string, multiSelect: boolean) => {
-    setContextMenuPos(null);
-    setSelectedIds((prev) => {
-      if (!multiSelect) return [id];
-      return prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id];
-    });
   }, []);
 
   const virtualTarget = useMemo<PositioningVirtualElement | undefined>(() => {
@@ -72,8 +72,7 @@ export function Desktop() {
     if (e.target !== containerRef.current && (e.target as HTMLElement).dataset.desktopGrid !== 'true') {
       return;
     }
-    setContextMenuPos(null);
-    setSelectedIds([]);
+    clearSelection();
     setMarquee({
       startX: e.clientX,
       startY: e.clientY,
@@ -104,7 +103,7 @@ export function Desktop() {
           rect.bottom > top;
         if (intersects) hitIds.push(id);
       });
-      setSelectedIds(hitIds);
+      setSelectedIconIds(hitIds);
     };
 
     const handleMouseUp = () => {
@@ -117,17 +116,11 @@ export function Desktop() {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [marquee]);
+  }, [marquee, setSelectedIconIds]);
 
   const handleContextMenu = (e: MouseEvent<HTMLDivElement>) => {
     e.preventDefault();
     setContextMenuPos({ x: e.clientX, y: e.clientY });
-  };
-
-  const handleRefresh = () => {
-    setContextMenuPos(null);
-    setIsRefreshing(true);
-    window.setTimeout(() => setIsRefreshing(false), 90);
   };
 
   const marqueeStyle = marquee
@@ -156,12 +149,13 @@ export function Desktop() {
           isRefreshing ? 'opacity-0' : 'opacity-100',
         ].join(' ')}
       >
-        {DESKTOP_APPS.map((app) => (
+        {apps.map((app) => (
           <DesktopIcon
             key={app.id}
             app={app}
             isSelected={selectedIds.includes(app.id)}
-            onSelect={handleSelectIcon}
+            onSelect={selectIcon}
+            onOpen={openApp}
             registerRef={registerRef}
           />
         ))}
@@ -189,7 +183,7 @@ export function Desktop() {
           <MenuList>
             <MenuItem icon={<GridRegular />}>View</MenuItem>
             <MenuItem icon={<ArrowSortRegular />}>Sort by</MenuItem>
-            <MenuItem icon={<ArrowClockwiseRegular />} onClick={handleRefresh}>
+            <MenuItem icon={<ArrowClockwiseRegular />} onClick={triggerRefresh}>
               Refresh
             </MenuItem>
             <MenuDivider />

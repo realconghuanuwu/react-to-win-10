@@ -5,6 +5,7 @@ import {
   PopoverTrigger,
   Tooltip,
 } from '@fluentui/react-components';
+import { useDesktopStore } from '../../store/useDesktopStore';
 import {
   Win10ActionCenterIcon,
   Win10ChevronUpIcon,
@@ -29,6 +30,7 @@ function formatDate(date: Date): string {
 
 export function SystemTray() {
   const [now, setNow] = useState(() => new Date());
+  const minimizeAll = useDesktopStore((state) => state.minimizeAll);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -176,6 +178,7 @@ export function SystemTray() {
         <button
           type="button"
           aria-label="Show desktop"
+          onClick={minimizeAll}
           className="w-[5px] h-full border-l border-white/25 hover:bg-white/20 transition-colors cursor-default"
         />
       </Tooltip>

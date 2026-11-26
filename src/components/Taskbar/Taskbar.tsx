@@ -1,22 +1,19 @@
-import { useState } from 'react';
+import { useMemo } from 'react';
 import { Tooltip } from '@fluentui/react-components';
-import { DESKTOP_APPS } from '../../data/desktopApps';
+import { useDesktopStore } from '../../store/useDesktopStore';
 import { SystemTray } from './SystemTray';
 import { Win10SearchIcon, Win10StartLogo } from './Win10Icons';
 
 export function Taskbar() {
-  const pinnedApps = DESKTOP_APPS.filter((app) => app.pinnedToTaskbar);
-  const [activeAppId, setActiveAppId] = useState<string | null>('chrome');
-  const [openAppIds, setOpenAppIds] = useState<string[]>(['chrome']);
+  const apps = useDesktopStore((state) => state.apps);
+  const openAppIds = useDesktopStore((state) => state.openAppIds);
+  const activeAppId = useDesktopStore((state) => state.activeAppId);
+  const toggleTaskbarApp = useDesktopStore((state) => state.toggleTaskbarApp);
 
-  const handleTaskbarAppClick = (id: string) => {
-    if (!openAppIds.includes(id)) {
-      setOpenAppIds((prev) => [...prev, id]);
-      setActiveAppId(id);
-      return;
-    }
-    setActiveAppId((prev) => (prev === id ? null : id));
-  };
+  const taskbarApps = useMemo(
+    () => apps.filter((app) => app.pinnedToTaskbar || openAppIds.includes(app.id)),
+    [apps, openAppIds],
+  );
 
   return (
     <footer
@@ -46,7 +43,7 @@ export function Taskbar() {
         </Tooltip>
 
         <nav aria-label="Pinned applications" className="flex items-center h-full">
-          {pinnedApps.map((app) => {
+          {taskbarApps.map((app) => {
             const isOpen = openAppIds.includes(app.id);
             const isActive = activeAppId === app.id;
 
@@ -55,7 +52,7 @@ export function Taskbar() {
                 <button
                   type="button"
                   aria-label={app.name}
-                  onClick={() => handleTaskbarAppClick(app.id)}
+                  onClick={() => toggleTaskbarApp(app.id)}
                   className={[
                     'relative flex items-center justify-center w-12 h-full transition-colors cursor-default',
                     isActive
