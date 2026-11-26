@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { START_TILE_GROUPS, type DesktopAppItem } from '../../data/desktopApps';
-import { useDesktopStore } from '../../store/useDesktopStore';
+import { getTaskbarThickness, useDesktopStore } from '../../store/useDesktopStore';
 
 const RECENT_APP_IDS = ['calculator', 'explorer', 'store'];
 const ACCESSORIES_IDS = ['notepad', 'paint', 'snip'];
@@ -8,6 +8,7 @@ const ACCESSORIES_IDS = ['notepad', 'paint', 'snip'];
 export function StartMenu() {
   const isStartMenuOpen = useDesktopStore((state) => state.isStartMenuOpen);
   const apps = useDesktopStore((state) => state.apps);
+  const taskbarSettings = useDesktopStore((state) => state.taskbarSettings);
   const openApp = useDesktopStore((state) => state.openApp);
   const closeStartMenu = useDesktopStore((state) => state.closeStartMenu);
   const minimizeAll = useDesktopStore((state) => state.minimizeAll);
@@ -79,13 +80,24 @@ export function StartMenu() {
   const railBtnClass =
     'flex items-center h-[44px] w-full text-white/90 hover:bg-white/10 active:bg-white/15 transition-colors cursor-default shrink-0';
 
+  const thickness = getTaskbarThickness(taskbarSettings);
+  const startMenuPositionStyle =
+    taskbarSettings.location === 'top'
+      ? { top: thickness, left: 0 }
+      : taskbarSettings.location === 'left'
+        ? { top: 0, left: thickness }
+        : taskbarSettings.location === 'right'
+          ? { top: 0, right: thickness }
+          : { bottom: thickness, left: 0 };
+
   return (
     <aside
       ref={menuRef}
       role="dialog"
       aria-label="Start Menu"
       onContextMenu={(e) => e.preventDefault()}
-      className="fixed bottom-[40px] left-0 z-40 flex w-[630px] max-w-[calc(100vw-8px)] h-[590px] max-h-[calc(100vh-48px)] bg-[#1f1f1f]/95 backdrop-blur-2xl border-t border-r border-white/10 shadow-[4px_-4px_24px_rgba(0,0,0,0.6)] text-white select-none"
+      style={startMenuPositionStyle}
+      className="fixed z-40 flex w-[630px] max-w-[calc(100vw-8px)] h-[590px] max-h-[calc(100vh-48px)] bg-[#1f1f1f]/95 backdrop-blur-2xl border border-white/10 shadow-[4px_-4px_24px_rgba(0,0,0,0.6)] text-white select-none"
     >
       {/* Left Navigation Rail */}
       <div

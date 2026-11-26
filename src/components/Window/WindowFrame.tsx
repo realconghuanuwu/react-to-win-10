@@ -1,12 +1,17 @@
 import { useRef, type PointerEvent as ReactPointerEvent } from 'react';
-import { useDesktopStore, type AppWindow } from '../../store/useDesktopStore';
+import {
+  getTaskbarInsets,
+  useDesktopStore,
+  type AppWindow,
+} from '../../store/useDesktopStore';
 import { CalculatorApp } from '../Apps/CalculatorApp';
 import { FileExplorerApp } from '../Apps/FileExplorerApp';
+import { TaskbarSettingsApp } from '../Apps/TaskbarSettingsApp';
+import { TaskManagerApp } from '../Apps/TaskManagerApp';
 
 type ResizeDirection = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
 const TITLEBAR_HEIGHT = 32;
-const TASKBAR_HEIGHT = 40;
 
 const RESIZE_HANDLES: Array<{ dir: ResizeDirection; className: string }> = [
   { dir: 'n', className: 'top-[-3px] left-1.5 right-1.5 h-1.5 cursor-ns-resize' },
@@ -26,6 +31,7 @@ interface WindowFrameProps {
 export function WindowFrame({ win }: WindowFrameProps) {
   const activeAppId = useDesktopStore((state) => state.activeAppId);
   const explorerStartFolderId = useDesktopStore((state) => state.explorerStartFolderId);
+  const taskbarSettings = useDesktopStore((state) => state.taskbarSettings);
   const focusWindow = useDesktopStore((state) => state.focusWindow);
   const minimizeWindow = useDesktopStore((state) => state.minimizeWindow);
   const toggleMaximizeWindow = useDesktopStore((state) => state.toggleMaximizeWindow);
@@ -35,7 +41,8 @@ export function WindowFrame({ win }: WindowFrameProps) {
   const isActive = activeAppId === win.id;
   const isExplorerApp =
     win.id === 'explorer' || win.id === 'this-pc' || win.id === 'recycle-bin';
-  const isDarkApp = win.id === 'calculator' || isExplorerApp;
+  const isDarkApp =
+    win.id === 'calculator' || isExplorerApp || win.id === 'settings';
   const dragSessionRef = useRef<boolean>(false);
 
   const handleTitleBarPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -62,8 +69,9 @@ export function WindowFrame({ win }: WindowFrameProps) {
       }
       dragSessionRef.current = true;
 
-      const desktopWidth = window.innerWidth;
-      const desktopHeight = window.innerHeight - TASKBAR_HEIGHT;
+      const insets = getTaskbarInsets(taskbarSettings);
+      const desktopWidth = window.innerWidth - insets.left - insets.right;
+      const desktopHeight = window.innerHeight - insets.top - insets.bottom;
 
       if (startedMaximized) {
         const restoredX = Math.max(
@@ -129,8 +137,9 @@ export function WindowFrame({ win }: WindowFrameProps) {
     const handlePointerMove = (moveEvent: PointerEvent) => {
       const dx = moveEvent.clientX - startClientX;
       const dy = moveEvent.clientY - startClientY;
-      const desktopWidth = window.innerWidth;
-      const desktopHeight = window.innerHeight - TASKBAR_HEIGHT;
+      const insets = getTaskbarInsets(taskbarSettings);
+      const desktopWidth = window.innerWidth - insets.left - insets.right;
+      const desktopHeight = window.innerHeight - insets.top - insets.bottom;
 
       let nextX = startX;
       let nextY = startY;
@@ -306,6 +315,10 @@ export function WindowFrame({ win }: WindowFrameProps) {
 
       {win.id === 'calculator' ? (
         <CalculatorApp isActive={isActive} />
+      ) : win.id === 'settings' ? (
+        <TaskbarSettingsApp />
+      ) : win.id === 'task-manager' ? (
+        <TaskManagerApp />
       ) : isExplorerApp ? (
         <FileExplorerApp
           windowId={win.id}

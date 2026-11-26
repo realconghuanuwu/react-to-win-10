@@ -78,6 +78,12 @@ export const DESKTOP_APPS: DesktopAppItem[] = [
     icon: '/assets/icons/snip.png',
     showOnDesktop: false,
   },
+  {
+    id: 'task-manager',
+    name: 'Task Manager',
+    icon: '/assets/icons/settings.png',
+    showOnDesktop: false,
+  },
 ];
 
 export interface StartTileGroup {

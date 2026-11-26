@@ -10,9 +10,60 @@ export function Win10StartLogo(props: SVGProps<SVGSVGElement>) {
 
 export function Win10SearchIcon(props: SVGProps<SVGSVGElement>) {
   return (
-    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true" {...props}>
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true" {...props}>
       <circle cx="14.5" cy="9.5" r="5.5" />
       <path d="M10.5 13.5L4 20" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function Win10CortanaIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 20 20" width="17" height="17" fill="none" aria-hidden="true" {...props}>
+      <circle cx="10" cy="10" r="7.2" stroke="currentColor" strokeWidth="2.1" opacity="0.95" />
+      <circle cx="10" cy="10" r="3.6" stroke="#60cdff" strokeWidth="1.4" opacity="0.9" />
+    </svg>
+  );
+}
+
+export function Win10TaskViewIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.35" aria-hidden="true" {...props}>
+      <rect x="4.5" y="4.5" width="9" height="8.5" rx="0.5" />
+      <path d="M13.5 6.5H16.5V15H7.5V13" />
+      <path d="M2.5 7V13M17.5 7V13" strokeLinecap="round" opacity="0.7" />
+    </svg>
+  );
+}
+
+export function Win10PeopleIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.35" aria-hidden="true" {...props}>
+      <circle cx="7.5" cy="6.5" r="2.5" />
+      <path d="M2.5 15.5C2.5 12.7 4.7 11 7.5 11C10.3 11 12.5 12.7 12.5 15.5" strokeLinecap="round" />
+      <circle cx="13.5" cy="7.5" r="2" />
+      <path d="M12.5 11.4C15 11.6 17 13.1 17 15.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function Win10InkIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.35" aria-hidden="true" {...props}>
+      <path d="M12.8 3.2L16.8 7.2L8.2 15.8L3.5 16.5L4.2 11.8L12.8 3.2Z" strokeLinejoin="round" />
+      <path d="M10.8 5.2L14.8 9.2" />
+      <path d="M9.5 16.5C11.5 16.5 12.5 14.5 14.5 14.5C15.8 14.5 16.6 15.5 17.5 16.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function Win10TouchKeyboardIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true" {...props}>
+      <rect x="2" y="5" width="16" height="10" rx="1" />
+      <path d="M4.5 8H6M7.5 8H9M10.5 8H12M13.5 8H15.5" strokeLinecap="round" />
+      <path d="M4.5 10.5H6M7.5 10.5H9M10.5 10.5H12M13.5 10.5H15.5" strokeLinecap="round" />
+      <path d="M6 12.8H14" strokeLinecap="round" />
     </svg>
   );
 }

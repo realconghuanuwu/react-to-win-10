@@ -1,21 +1,16 @@
 import { create } from 'zustand';
+import type { FsNode, FsNodeKind } from '../db/types';
+import {
+  DEFAULT_IDB_QUOTA_BYTES,
+  estimateStorageStats,
+  loadOrInitFileSystemNodes,
+  measureNodesBytes,
+  saveAllFileSystemNodes,
+} from '../db/win10Db';
 
-export type FsNodeKind = 'root' | 'drive' | 'folder' | 'bin';
+export type { FsNode, FsNodeKind };
 
-export interface FsNode {
-  id: string;
-  parentId: string | null;
-  name: string;
-  kind: FsNodeKind;
-  icon: string;
-  isSystem?: boolean;
-  createdAt: number;
-  modifiedAt: number;
-  originalParentId?: string | null;
-}
-
-export const FS_STORAGE_KEY = 'win10_fs_v1';
-export const LOCAL_STORAGE_QUOTA_BYTES = 5 * 1024 * 1024; // 5.00 MB browser localStorage quota
+export const FS_DB_STORE = 'win10_db/fs_nodes';
 
 const NOW = Date.now();
 
@@ -154,52 +149,11 @@ const DEFAULT_NODES: Record<string, FsNode> = {
 
 export const QUICK_ACCESS_IDS = ['desktop', 'downloads', 'documents', 'pictures'] as const;
 
-export function measureLocalStorageBytes(): number {
-  if (typeof window === 'undefined' || !window.localStorage) return 0;
-  let totalBytes = 0;
-  for (let i = 0; i < window.localStorage.length; i++) {
-    const key = window.localStorage.key(i);
-    if (!key) continue;
-    const value = window.localStorage.getItem(key) ?? '';
-    totalBytes += (key.length + value.length) * 2; // UTF-16 code units
-  }
-  return totalBytes;
-}
-
 export function formatStorageBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-}
-
-function loadInitialNodes(): Record<string, FsNode> {
-  if (typeof window === 'undefined' || !window.localStorage) return DEFAULT_NODES;
-  try {
-    const raw = window.localStorage.getItem(FS_STORAGE_KEY);
-    if (!raw) {
-      window.localStorage.setItem(FS_STORAGE_KEY, JSON.stringify(DEFAULT_NODES));
-      return DEFAULT_NODES;
-    }
-    const parsed = JSON.parse(raw) as Record<string, FsNode>;
-    if (!parsed['this-pc'] || !parsed['drive-c'] || !parsed['recycle-bin']) {
-      window.localStorage.setItem(FS_STORAGE_KEY, JSON.stringify(DEFAULT_NODES));
-      return DEFAULT_NODES;
-    }
-    return parsed;
-  } catch {
-    return DEFAULT_NODES;
-  }
-}
-
-function persistNodes(nodes: Record<string, FsNode>): number {
-  if (typeof window !== 'undefined' && window.localStorage) {
-    try {
-      window.localStorage.setItem(FS_STORAGE_KEY, JSON.stringify(nodes));
-    } catch {
-      // Ignore quota exceeded errors gracefully
-    }
-  }
-  return measureLocalStorageBytes();
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
 function getUniqueFolderName(
@@ -222,158 +176,200 @@ function getUniqueFolderName(
 
 interface FileSystemState {
   nodes: Record<string, FsNode>;
+  isHydrated: boolean;
   storageUsedBytes: number;
   storageQuotaBytes: number;
+  hydrate: () => Promise<void>;
   createFolder: (parentId: string, desiredName?: string) => string | null;
   renameNode: (id: string, newName: string) => void;
   deleteNodes: (ids: string[]) => void;
   restoreNodes: (ids: string[]) => void;
   emptyRecycleBin: () => void;
-  refreshStorageStats: () => void;
+  refreshStorageStats: () => Promise<void>;
 }
 
-const initialNodes = loadInitialNodes();
+let hasUserMutated = false;
+let hydratePromise: Promise<void> | null = null;
 
-export const useFileSystemStore = create<FileSystemState>((set, get) => ({
-  nodes: initialNodes,
-  storageUsedBytes: measureLocalStorageBytes(),
-  storageQuotaBytes: LOCAL_STORAGE_QUOTA_BYTES,
+export const useFileSystemStore = create<FileSystemState>((set, get) => {
+  const persistNodes = (nextNodes: Record<string, FsNode>) => {
+    hasUserMutated = true;
+    void saveAllFileSystemNodes(nextNodes).then(async () => {
+      const stats = await estimateStorageStats(get().nodes);
+      set({
+        storageUsedBytes: stats.usedBytes,
+        storageQuotaBytes: stats.quotaBytes,
+      });
+    });
+    return measureNodesBytes(nextNodes);
+  };
 
-  createFolder: (parentId, desiredName) => {
-    const state = get();
-    const parent = state.nodes[parentId];
-    if (!parent || parent.kind === 'root' || parent.kind === 'bin') {
-      return null;
-    }
+  return {
+    nodes: DEFAULT_NODES,
+    isHydrated: false,
+    storageUsedBytes: measureNodesBytes(DEFAULT_NODES),
+    storageQuotaBytes: DEFAULT_IDB_QUOTA_BYTES,
 
-    const name = getUniqueFolderName(state.nodes, parentId, desiredName?.trim() || 'New folder');
-    const id = `folder-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const timestamp = Date.now();
+    hydrate: () => {
+      if (hydratePromise) return hydratePromise;
+      hydratePromise = (async () => {
+        const loadedNodes = await loadOrInitFileSystemNodes(DEFAULT_NODES);
+        const targetNodes = hasUserMutated ? get().nodes : loadedNodes;
+        const stats = await estimateStorageStats(targetNodes);
+        set({
+          nodes: targetNodes,
+          isHydrated: true,
+          storageUsedBytes: stats.usedBytes,
+          storageQuotaBytes: stats.quotaBytes,
+        });
+      })();
+      return hydratePromise;
+    },
 
-    const nextNodes: Record<string, FsNode> = {
-      ...state.nodes,
-      [id]: {
-        id,
-        parentId,
-        name,
-        kind: 'folder',
-        icon: '/assets/icons/folder-win10.png',
-        isSystem: false,
-        createdAt: timestamp,
-        modifiedAt: timestamp,
-      },
-    };
+    createFolder: (parentId, desiredName) => {
+      const state = get();
+      const parent = state.nodes[parentId];
+      if (!parent || parent.kind === 'root' || parent.kind === 'bin') {
+        return null;
+      }
 
-    const storageUsedBytes = persistNodes(nextNodes);
-    set({ nodes: nextNodes, storageUsedBytes });
-    return id;
-  },
-
-  renameNode: (id, newName) => {
-    const trimmed = newName.trim();
-    if (!trimmed) return;
-
-    set((state) => {
-      const target = state.nodes[id];
-      if (!target || target.isSystem) return state;
+      const name = getUniqueFolderName(state.nodes, parentId, desiredName?.trim() || 'New folder');
+      const id = `folder-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const timestamp = Date.now();
 
       const nextNodes: Record<string, FsNode> = {
         ...state.nodes,
         [id]: {
-          ...target,
-          name: trimmed,
-          modifiedAt: Date.now(),
+          id,
+          parentId,
+          name,
+          kind: 'folder',
+          icon: '/assets/icons/folder-win10.png',
+          isSystem: false,
+          createdAt: timestamp,
+          modifiedAt: timestamp,
         },
       };
+
       const storageUsedBytes = persistNodes(nextNodes);
-      return { nodes: nextNodes, storageUsedBytes };
-    });
-  },
+      set({ nodes: nextNodes, storageUsedBytes: Math.max(state.storageUsedBytes, storageUsedBytes) });
+      return id;
+    },
 
-  deleteNodes: (ids) => {
-    set((state) => {
-      const nextNodes = { ...state.nodes };
-      const collectDescendants = (rootId: string): string[] => {
-        const result = [rootId];
-        Object.values(nextNodes).forEach((node) => {
-          if (node.parentId === rootId) {
-            result.push(...collectDescendants(node.id));
-          }
-        });
-        return result;
-      };
+    renameNode: (id, newName) => {
+      const trimmed = newName.trim();
+      if (!trimmed) return;
 
-      let changed = false;
-      for (const id of ids) {
-        const target = nextNodes[id];
-        if (!target || target.isSystem) continue;
-        changed = true;
-        if (target.parentId === 'recycle-bin') {
-          for (const descId of collectDescendants(id)) {
-            delete nextNodes[descId];
+      set((state) => {
+        const target = state.nodes[id];
+        if (!target || target.isSystem) return state;
+
+        const nextNodes: Record<string, FsNode> = {
+          ...state.nodes,
+          [id]: {
+            ...target,
+            name: trimmed,
+            modifiedAt: Date.now(),
+          },
+        };
+        const storageUsedBytes = persistNodes(nextNodes);
+        return { nodes: nextNodes, storageUsedBytes };
+      });
+    },
+
+    deleteNodes: (ids) => {
+      set((state) => {
+        const nextNodes = { ...state.nodes };
+        const collectDescendants = (rootId: string): string[] => {
+          const result = [rootId];
+          Object.values(nextNodes).forEach((node) => {
+            if (node.parentId === rootId) {
+              result.push(...collectDescendants(node.id));
+            }
+          });
+          return result;
+        };
+
+        let changed = false;
+        for (const id of ids) {
+          const target = nextNodes[id];
+          if (!target || target.isSystem) continue;
+          changed = true;
+          if (target.parentId === 'recycle-bin') {
+            for (const descId of collectDescendants(id)) {
+              delete nextNodes[descId];
+            }
+          } else {
+            nextNodes[id] = {
+              ...target,
+              originalParentId: target.parentId,
+              parentId: 'recycle-bin',
+              modifiedAt: Date.now(),
+            };
           }
-        } else {
+        }
+
+        if (!changed) return state;
+        const storageUsedBytes = persistNodes(nextNodes);
+        return { nodes: nextNodes, storageUsedBytes };
+      });
+    },
+
+    restoreNodes: (ids) => {
+      set((state) => {
+        const nextNodes = { ...state.nodes };
+        let changed = false;
+        for (const id of ids) {
+          const target = nextNodes[id];
+          if (!target || target.parentId !== 'recycle-bin') continue;
+          const restoreParent =
+            target.originalParentId && nextNodes[target.originalParentId]
+              ? target.originalParentId
+              : 'drive-c';
           nextNodes[id] = {
             ...target,
-            originalParentId: target.parentId,
-            parentId: 'recycle-bin',
+            parentId: restoreParent,
+            originalParentId: undefined,
             modifiedAt: Date.now(),
           };
+          changed = true;
         }
-      }
-
-      if (!changed) return state;
-      const storageUsedBytes = persistNodes(nextNodes);
-      return { nodes: nextNodes, storageUsedBytes };
-    });
-  },
-
-  restoreNodes: (ids) => {
-    set((state) => {
-      const nextNodes = { ...state.nodes };
-      let changed = false;
-      for (const id of ids) {
-        const target = nextNodes[id];
-        if (!target || target.parentId !== 'recycle-bin') continue;
-        const restoreParent =
-          target.originalParentId && nextNodes[target.originalParentId]
-            ? target.originalParentId
-            : 'drive-c';
-        nextNodes[id] = {
-          ...target,
-          parentId: restoreParent,
-          originalParentId: undefined,
-          modifiedAt: Date.now(),
-        };
-        changed = true;
-      }
-      if (!changed) return state;
-      const storageUsedBytes = persistNodes(nextNodes);
-      return { nodes: nextNodes, storageUsedBytes };
-    });
-  },
-
-  emptyRecycleBin: () => {
-    set((state) => {
-      const nextNodes = { ...state.nodes };
-      const toRemove = new Set<string>();
-      const collect = (id: string) => {
-        toRemove.add(id);
-        Object.values(nextNodes).forEach((n) => {
-          if (n.parentId === id) collect(n.id);
-        });
-      };
-      Object.values(nextNodes).forEach((n) => {
-        if (n.parentId === 'recycle-bin') collect(n.id);
+        if (!changed) return state;
+        const storageUsedBytes = persistNodes(nextNodes);
+        return { nodes: nextNodes, storageUsedBytes };
       });
-      if (toRemove.size === 0) return state;
-      toRemove.forEach((id) => delete nextNodes[id]);
-      const storageUsedBytes = persistNodes(nextNodes);
-      return { nodes: nextNodes, storageUsedBytes };
-    });
-  },
+    },
 
-  refreshStorageStats: () => {
-    set({ storageUsedBytes: measureLocalStorageBytes() });
-  },
-}));
+    emptyRecycleBin: () => {
+      set((state) => {
+        const nextNodes = { ...state.nodes };
+        const toRemove = new Set<string>();
+        const collect = (id: string) => {
+          toRemove.add(id);
+          Object.values(nextNodes).forEach((n) => {
+            if (n.parentId === id) collect(n.id);
+          });
+        };
+        Object.values(nextNodes).forEach((n) => {
+          if (n.parentId === 'recycle-bin') collect(n.id);
+        });
+        if (toRemove.size === 0) return state;
+        toRemove.forEach((id) => delete nextNodes[id]);
+        const storageUsedBytes = persistNodes(nextNodes);
+        return { nodes: nextNodes, storageUsedBytes };
+      });
+    },
+
+    refreshStorageStats: async () => {
+      const stats = await estimateStorageStats(get().nodes);
+      set({
+        storageUsedBytes: stats.usedBytes,
+        storageQuotaBytes: stats.quotaBytes,
+      });
+    },
+  };
+});
+
+if (typeof window !== 'undefined') {
+  void useFileSystemStore.getState().hydrate();
+}

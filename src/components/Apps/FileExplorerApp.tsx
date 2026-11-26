@@ -34,7 +34,7 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
 
   const [history, setHistory] = useState<string[]>([initialFolderId]);
   const [historyIdx, setHistoryIdx] = useState(0);
-  const prevStartFolderRef = useRef(explorerStartFolderId);
+  const prevStartFolderRef = useRef(initialFolderId);
 
   useEffect(() => {
     if (
@@ -63,6 +63,10 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
 
   const currentFolderId = history[historyIdx] ?? 'this-pc';
   const currentNode = nodes[currentFolderId] ?? nodes['this-pc'];
+
+  useEffect(() => {
+    void refreshStorageStats();
+  }, [refreshStorageStats]);
 
   useEffect(() => {
     if (currentNode) {
@@ -749,7 +753,7 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
           )}
         </div>
         <div data-testid="explorer-storage-status" className="text-[#aaaaaa] tabular-nums">
-          Local Storage: {formatStorageBytes(storageUsedBytes)} / {formatStorageBytes(storageQuotaBytes)}
+          IndexedDB: {formatStorageBytes(storageUsedBytes)} / {formatStorageBytes(storageQuotaBytes)}
         </div>
       </footer>
 

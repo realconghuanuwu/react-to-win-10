@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { useDesktopStore } from '../../store/useDesktopStore';
+import { findNextFreeSlot, useDesktopStore } from '../../store/useDesktopStore';
+import { useFileSystemStore } from '../../store/useFileSystemStore';
+import type { DesktopDisplayItem } from './DesktopIcon';
 
 type SubmenuKey = 'view' | 'sort' | 'new' | null;
 
@@ -36,16 +38,37 @@ function RadioDot() {
   return <span className="w-1.5 h-1.5 rounded-full bg-white inline-block" aria-hidden="true" />;
 }
 
-export function DesktopContextMenu() {
+interface DesktopContextMenuProps {
+  visibleItems: DesktopDisplayItem[];
+  cellStep: { w: number; h: number };
+  maxRows: number;
+  onOpenItem: (item: DesktopDisplayItem) => void;
+}
+
+export function DesktopContextMenu({
+  visibleItems,
+  cellStep,
+  maxRows,
+  onOpenItem,
+}: DesktopContextMenuProps) {
   const contextMenuPos = useDesktopStore((state) => state.contextMenuPos);
   const iconSize = useDesktopStore((state) => state.iconSize);
   const showDesktopIcons = useDesktopStore((state) => state.showDesktopIcons);
   const sortBy = useDesktopStore((state) => state.sortBy);
+  const iconPositions = useDesktopStore((state) => state.iconPositions);
   const setContextMenuPos = useDesktopStore((state) => state.setContextMenuPos);
   const triggerRefresh = useDesktopStore((state) => state.triggerRefresh);
   const setIconSize = useDesktopStore((state) => state.setIconSize);
   const toggleShowDesktopIcons = useDesktopStore((state) => state.toggleShowDesktopIcons);
   const sortAppsByName = useDesktopStore((state) => state.sortAppsByName);
+  const setIconPosition = useDesktopStore((state) => state.setIconPosition);
+  const setRenamingIconId = useDesktopStore((state) => state.setRenamingIconId);
+  const setSelectedIconIds = useDesktopStore((state) => state.setSelectedIconIds);
+
+  const nodes = useFileSystemStore((state) => state.nodes);
+  const createFolder = useFileSystemStore((state) => state.createFolder);
+  const deleteNodes = useFileSystemStore((state) => state.deleteNodes);
+  const emptyRecycleBin = useFileSystemStore((state) => state.emptyRecycleBin);
 
   const [openSubmenu, setOpenSubmenu] = useState<SubmenuKey>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -79,10 +102,15 @@ export function DesktopContextMenu() {
 
   if (!contextMenuPos) return null;
 
+  const targetItem = contextMenuPos.targetId
+    ? visibleItems.find((i) => i.id === contextMenuPos.targetId)
+    : null;
+
   const vw = window.innerWidth;
   const vh = window.innerHeight - TASKBAR_HEIGHT;
+  const effectiveHeight = targetItem ? 180 : MENU_HEIGHT;
   const left = Math.max(4, Math.min(contextMenuPos.x, vw - MENU_WIDTH - 4));
-  const top = Math.max(4, Math.min(contextMenuPos.y, vh - MENU_HEIGHT - 4));
+  const top = Math.max(4, Math.min(contextMenuPos.y, vh - effectiveHeight - 4));
   const openSubmenuLeft = left + MENU_WIDTH + 185 > vw;
 
   const submenuPositionClass = openSubmenuLeft
@@ -95,6 +123,126 @@ export function DesktopContextMenu() {
     'flex items-center justify-between h-[26px] px-2 text-[12px] text-[#7a7a7a] cursor-default';
   const dividerClass = 'h-px bg-[#5a5a5a] my-[3px] mx-[8px]';
   const gutterClass = 'w-[24px] shrink-0 flex items-center justify-center mr-1';
+
+  const handleCreateDesktopFolder = () => {
+    const folderId = createFolder('desktop');
+    if (!folderId) return;
+
+    const preferredCol = Math.max(0, Math.floor((contextMenuPos.x - 8) / cellStep.w));
+    const preferredRow = Math.max(0, Math.min(maxRows - 1, Math.floor((contextMenuPos.y - 8) / cellStep.h)));
+    const freeSlot = findNextFreeSlot(
+      iconPositions,
+      visibleItems.map((i) => i.id),
+      maxRows,
+      { col: preferredCol, row: preferredRow },
+    );
+
+    setIconPosition(folderId, freeSlot);
+    setSelectedIconIds([folderId]);
+    setRenamingIconId(folderId);
+    setContextMenuPos(null);
+  };
+
+  if (targetItem) {
+    const binHasItems = Object.values(nodes).some((n) => n.parentId === 'recycle-bin');
+    const isRecycleBin = targetItem.id === 'recycle-bin';
+    const isDeletableFolder = Boolean(targetItem.isFolder && !targetItem.isSystem);
+
+    return (
+      <div
+        ref={menuRef}
+        role="menu"
+        aria-label="Shortcut context menu"
+        onContextMenu={(e) => e.preventDefault()}
+        style={{ left, top, width: 205 }}
+        className="fixed z-[90] bg-[#2b2b2b] border border-[#767676] shadow-[2px_4px_12px_rgba(0,0,0,0.5)] py-[3px] select-none"
+      >
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            onOpenItem(targetItem);
+            setContextMenuPos(null);
+          }}
+          className={`${rowClass} w-full font-semibold`}
+        >
+          <div className="flex items-center">
+            <span className={gutterClass} />
+            <span>Open</span>
+          </div>
+        </button>
+
+        {isRecycleBin && (
+          <button
+            type="button"
+            role="menuitem"
+            disabled={!binHasItems}
+            onClick={() => {
+              emptyRecycleBin();
+              setContextMenuPos(null);
+            }}
+            className={binHasItems ? `${rowClass} w-full` : `${disabledRowClass} w-full`}
+          >
+            <div className="flex items-center">
+              <span className={gutterClass} />
+              <span>Empty Recycle Bin</span>
+            </div>
+          </button>
+        )}
+
+        <div className={dividerClass} />
+
+        <div role="menuitem" aria-disabled="true" className={disabledRowClass}>
+          <div className="flex items-center">
+            <span className={gutterClass} />
+            <span>Cut</span>
+          </div>
+        </div>
+        <div role="menuitem" aria-disabled="true" className={disabledRowClass}>
+          <div className="flex items-center">
+            <span className={gutterClass} />
+            <span>Copy</span>
+          </div>
+        </div>
+
+        <div className={dividerClass} />
+
+        <button
+          type="button"
+          role="menuitem"
+          disabled={!isDeletableFolder}
+          onClick={() => {
+            if (!isDeletableFolder) return;
+            deleteNodes([targetItem.id]);
+            setSelectedIconIds([]);
+            setContextMenuPos(null);
+          }}
+          className={isDeletableFolder ? `${rowClass} w-full` : `${disabledRowClass} w-full`}
+        >
+          <div className="flex items-center">
+            <span className={gutterClass} />
+            <span>Delete</span>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            setSelectedIconIds([targetItem.id]);
+            setRenamingIconId(targetItem.id);
+          }}
+          className={`${rowClass} w-full`}
+        >
+          <div className="flex items-center">
+            <span className={gutterClass} />
+            <span>Rename</span>
+          </div>
+          <span className="text-[11px] text-white/60 pr-1">F2</span>
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -214,7 +362,7 @@ export function DesktopContextMenu() {
             <button
               type="button"
               role="menuitem"
-              onClick={sortAppsByName}
+              onClick={() => sortAppsByName(visibleItems.map((i) => i.id))}
               className={`${rowClass} w-full`}
             >
               <div className="flex items-center">
@@ -305,18 +453,23 @@ export function DesktopContextMenu() {
             role="menu"
             className={`absolute top-[-4px] ${submenuPositionClass} w-[180px] bg-[#2b2b2b] border border-[#767676] shadow-[2px_4px_12px_rgba(0,0,0,0.5)] py-[3px] z-[95]`}
           >
-            <div className={rowClass} onClick={() => setContextMenuPos(null)}>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={handleCreateDesktopFolder}
+              className={`${rowClass} w-full`}
+            >
               <div className="flex items-center">
                 <span className={gutterClass}>
                   <img
-                    src="/assets/icons/folder-win10.svg"
+                    src="/assets/icons/folder-win10.png"
                     alt=""
                     className="w-4 h-4 object-contain"
                   />
                 </span>
                 <span>Folder</span>
               </div>
-            </div>
+            </button>
             <div className={rowClass} onClick={() => setContextMenuPos(null)}>
               <div className="flex items-center">
                 <span className={gutterClass} />

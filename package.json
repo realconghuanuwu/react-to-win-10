@@ -12,6 +12,7 @@
   "dependencies": {
     "@fluentui/react-components": "^9.75.3",
     "@fluentui/react-icons": "^2.0.347",
+    "idb": "^8.0.4",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "zustand": "^5.1.0"
