@@ -6,9 +6,19 @@ export interface DesktopAppItem {
 }
 
 /**
- * Built-in Windows 10 applications shown on the Desktop and Taskbar.
+ * Windows 10 desktop and taskbar applications.
  */
 export const DESKTOP_APPS: DesktopAppItem[] = [
+  {
+    id: 'my-computer',
+    name: 'My Computer',
+    icon: '/assets/icons/my-computer.png',
+  },
+  {
+    id: 'trash-can',
+    name: 'Trash can',
+    icon: '/assets/icons/trash-can.png',
+  },
   {
     id: 'explorer',
     name: 'File Explorer',
@@ -25,21 +35,5 @@ export const DESKTOP_APPS: DesktopAppItem[] = [
     name: 'Microsoft Store',
     icon: '/assets/icons/microsoft-store.png',
     pinnedToTaskbar: true,
-  },
-  {
-    id: 'weather',
-    name: 'Weather',
-    icon: '/assets/icons/weather.png',
-  },
-  {
-    id: 'mail',
-    name: 'Mail',
-    icon: '/assets/icons/mail.png',
-    pinnedToTaskbar: true,
-  },
-  {
-    id: 'calendar',
-    name: 'Calendar',
-    icon: '/assets/icons/calendar.png',
   },
 ];
