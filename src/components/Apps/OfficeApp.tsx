@@ -8,7 +8,7 @@ import '@univerjs/preset-docs-core/lib/index.css';
 import '@univerjs/preset-sheets-core/lib/index.css';
 import { useDesktopStore } from '../../store/useDesktopStore';
 import { useFileSystemStore } from '../../store/useFileSystemStore';
-import { WordHomeScreen } from './WordHomeScreen';
+import { OfficeHomeScreen } from './OfficeHomeScreen';
 
 export type OfficeMode = 'word' | 'excel';
 
@@ -84,8 +84,8 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
   const brandHover = mode === 'word' ? 'hover:bg-[#1a3c70]' : 'hover:bg-[#0c6434]';
   const appLabel = mode === 'word' ? 'Word' : 'Excel';
 
-  // Word shows home screen on first open; Excel goes straight to editor
-  const [view, setView] = useState<WordView>(mode === 'word' ? 'home' : 'editor');
+  // Both Word and Excel show home screen on first open
+  const [view, setView] = useState<WordView>('home');
   const [currentFileId, setCurrentFileId] = useState<string | null>(null);
   const [documentTitle, setDocumentTitle] = useState<string>(defaultTitle);
   const [statusMessage, setStatusMessage] = useState<string>('');
@@ -153,6 +153,27 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
 
     univerApiRef.current = univerAPI;
 
+    // Apply gray canvas background (like real Word/Excel) after UniverJS mounts
+    const applyCanvasBg = () => {
+      // UniverJS wraps canvas in a div with overflow:hidden – set bg on that wrapper
+      const canvasEl = container.querySelector<HTMLElement>('canvas');
+      if (canvasEl?.parentElement) {
+        canvasEl.parentElement.style.backgroundColor = '#b2b2b2';
+      }
+      // Also set on the top-level scrollable area inside container
+      const scrollArea = container.querySelector<HTMLElement>('[class*="viewport"], [class*="canvas-container"], [class*="scroll"]');
+      if (scrollArea) scrollArea.style.backgroundColor = '#b2b2b2';
+      // Set on container root itself
+      container.style.backgroundColor = '#b2b2b2';
+    };
+    // Try immediately and after a short delay (UniverJS renders asynchronously)
+    applyCanvasBg();
+    const bgTimer = window.setTimeout(applyCanvasBg, 300);
+    // Also watch DOM mutations in case UniverJS injects canvas later
+    const bgObserver = new MutationObserver(applyCanvasBg);
+    bgObserver.observe(container, { childList: true, subtree: true });
+    const stopObserver = window.setTimeout(() => bgObserver.disconnect(), 3000);
+
     // Load saved snapshot or create fresh document
     let parsedSnapshot: Record<string, unknown> | null = null;
     if (currentFileId) {
@@ -194,6 +215,9 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
     }
 
     return () => {
+      window.clearTimeout(bgTimer);
+      window.clearTimeout(stopObserver);
+      bgObserver.disconnect();
       univerApiRef.current = null;
       queueMicrotask(() => {
         univer.dispose();
@@ -232,13 +256,6 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
   };
 
   const handleNew = () => {
-    setCurrentFileId(null);
-    setDocumentTitle(defaultTitle);
-    setView('editor');
-    setReloadNonce((n) => n + 1);
-  };
-
-  const handleNewWelcome = () => {
     setCurrentFileId(null);
     setDocumentTitle(defaultTitle);
     setView('editor');
@@ -306,13 +323,13 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
     setStatusMessage('Saved to your local PC (Downloads)');
   };
 
-  // ── Render: Word Home Screen ──────────────────────────────────────────────
-  if (mode === 'word' && view === 'home') {
+  // ── Render: Home Screen (Word or Excel) ──────────────────────────────────
+  if (view === 'home') {
     return (
-      <WordHomeScreen
+      <OfficeHomeScreen
+        mode={mode}
         recentFiles={savedOfficeFiles}
         onNewBlank={handleNew}
-        onNewWelcome={handleNewWelcome}
         onOpenFile={handleOpenFileFromHome}
         onOpenFromPc={() => setShowOpenModal(true)}
       />
@@ -331,20 +348,18 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
         className="h-9 px-3 flex items-center justify-between text-white text-[12px] shrink-0 border-b border-black/15"
       >
         <div className="flex items-center gap-2 min-w-0">
-          {/* Back to Home (Word only) */}
-          {mode === 'word' && (
-            <button
-              type="button"
-              onClick={() => setView('home')}
-              title="Back to Word Home"
-              className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] transition-colors cursor-default ${brandHover}`}
-            >
-              <svg viewBox="0 0 10 10" width="10" height="10" fill="currentColor" aria-hidden="true">
-                <path d="M6.5 1.5l-4 3.5 4 3.5" stroke="currentColor" strokeWidth="1.2" fill="none" strokeLinecap="round" />
-              </svg>
-              Home
-            </button>
-          )}
+          {/* Back to Home (Word & Excel) */}
+          <button
+            type="button"
+            onClick={() => setView('home')}
+            title={`Back to ${appLabel} Home`}
+            className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] transition-colors cursor-default ${brandHover}`}
+          >
+            <svg viewBox="0 0 10 10" width="10" height="10" fill="currentColor" aria-hidden="true">
+              <path d="M6.5 1.5l-4 3.5 4 3.5" stroke="currentColor" strokeWidth="1.2" fill="none" strokeLinecap="round" />
+            </svg>
+            Home
+          </button>
           <img
             src={mode === 'word' ? '/assets/icons/word.svg' : '/assets/icons/excel.svg'}
             alt=""
@@ -405,7 +420,7 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
       {/* UniverJS Mount Container */}
       <div
         ref={containerRef}
-        className="flex-1 min-h-0 w-full relative overflow-hidden bg-white"
+        className="flex-1 min-h-0 w-full relative overflow-hidden bg-[#b2b2b2]"
       />
 
       {/* Open Saved File Modal */}

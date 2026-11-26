@@ -142,3 +142,12 @@
   border-radius: 9999px;
   background-color: #ffffff;
 }
+
+/* ── UniverJS Office Canvas Background Override ─────────────────────────── */
+/* Make the outer canvas area gray like real Word/Excel (the page stays white) */
+.univer-app-layout,
+.univer-app-layout > div,
+[class*="univer-layout"],
+[class*="univer-render-canvas-wrapper"] {
+  background-color: #b2b2b2 !important;
+}
