@@ -53,6 +53,7 @@ interface DesktopState {
   toggleMaximizeWindow: (id: string) => void;
   closeWindow: (id: string) => void;
   updateWindowBounds: (id: string, bounds: WindowBounds, unmaximize?: boolean) => void;
+  setWindowTitle: (id: string, title: string) => void;
   minimizeAll: () => void;
 }
 
@@ -70,10 +71,11 @@ function createInitialBounds(appId: string, existingCount: number): { bounds: Wi
   const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
   const vh = typeof window !== 'undefined' ? window.innerHeight - TASKBAR_HEIGHT : 680;
   const isCalc = appId === 'calculator';
-  const targetWidth = isCalc ? 340 : DEFAULT_WIDTH;
-  const targetHeight = isCalc ? 540 : DEFAULT_HEIGHT;
-  const minWidth = isCalc ? 320 : 320;
-  const minHeight = isCalc ? 480 : 220;
+  const isExplorer = appId === 'explorer' || appId === 'this-pc' || appId === 'recycle-bin';
+  const targetWidth = isCalc ? 340 : isExplorer ? 940 : DEFAULT_WIDTH;
+  const targetHeight = isCalc ? 540 : isExplorer ? 600 : DEFAULT_HEIGHT;
+  const minWidth = isCalc ? 320 : isExplorer ? 620 : 320;
+  const minHeight = isCalc ? 480 : isExplorer ? 400 : 220;
 
   const width = Math.min(targetWidth, Math.max(minWidth, vw - 48));
   const height = Math.min(targetHeight, Math.max(minHeight, vh - 48));
@@ -288,6 +290,11 @@ export const useDesktopStore = create<DesktopState>((set) => ({
             }
           : w,
       ),
+    })),
+
+  setWindowTitle: (id, title) =>
+    set((state) => ({
+      windows: state.windows.map((w) => (w.id === id ? { ...w, title } : w)),
     })),
 
   minimizeAll: () =>

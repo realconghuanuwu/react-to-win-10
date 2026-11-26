@@ -1,6 +1,7 @@
 import { useRef, type PointerEvent as ReactPointerEvent } from 'react';
 import { useDesktopStore, type AppWindow } from '../../store/useDesktopStore';
 import { CalculatorApp } from '../Apps/CalculatorApp';
+import { FileExplorerApp } from '../Apps/FileExplorerApp';
 
 type ResizeDirection = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
@@ -31,7 +32,9 @@ export function WindowFrame({ win }: WindowFrameProps) {
   const updateWindowBounds = useDesktopStore((state) => state.updateWindowBounds);
 
   const isActive = activeAppId === win.id;
-  const isDarkApp = win.id === 'calculator';
+  const isExplorerApp =
+    win.id === 'explorer' || win.id === 'this-pc' || win.id === 'recycle-bin';
+  const isDarkApp = win.id === 'calculator' || isExplorerApp;
   const dragSessionRef = useRef<boolean>(false);
 
   const handleTitleBarPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -197,7 +200,7 @@ export function WindowFrame({ win }: WindowFrameProps) {
       style={frameStyle}
       className={[
         'pointer-events-auto absolute flex-col select-none',
-        isDarkApp ? 'bg-[#202020]' : 'bg-[#e6e6e6]',
+        isDarkApp ? (isExplorerApp ? 'bg-[#191919]' : 'bg-[#202020]') : 'bg-[#e6e6e6]',
         win.isMaximized
           ? 'border-0 shadow-none'
           : isActive
@@ -223,7 +226,9 @@ export function WindowFrame({ win }: WindowFrameProps) {
           'flex items-center justify-between h-[32px] shrink-0 pl-3 pr-0',
           isDarkApp
             ? isActive
-              ? 'bg-[#202020] text-white'
+              ? isExplorerApp
+                ? 'bg-[#000000] text-white'
+                : 'bg-[#202020] text-white'
               : 'bg-[#202020] text-[#8a8a8a]'
             : isActive
               ? 'bg-white text-[#1f1f1f]'
@@ -300,6 +305,11 @@ export function WindowFrame({ win }: WindowFrameProps) {
 
       {win.id === 'calculator' ? (
         <CalculatorApp isActive={isActive} />
+      ) : isExplorerApp ? (
+        <FileExplorerApp
+          windowId={win.id}
+          initialFolderId={win.id === 'recycle-bin' ? 'recycle-bin' : 'this-pc'}
+        />
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center bg-[#e6e6e6] p-6 overflow-hidden">
           <img
