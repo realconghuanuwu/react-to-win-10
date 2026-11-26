@@ -3,9 +3,12 @@ import { DESKTOP_APPS } from '../../data/desktopApps';
 import { useDesktopStore } from '../../store/useDesktopStore';
 import { useFileSystemStore } from '../../store/useFileSystemStore';
 
-const EXTRA_ASSETS = [
+const CRITICAL_WALLPAPERS = [
   '/assets/wallpapers/lock-screen.jpg',
   '/assets/wallpapers/win10-hero.jpg',
+];
+
+const SECONDARY_ASSETS = [
   '/assets/wallpapers/img1.jpg',
   '/assets/wallpapers/img2.jpg',
   '/assets/wallpapers/img3.jpg',
@@ -40,9 +43,8 @@ export function BootScreen() {
 
   useEffect(() => {
     let cancelled = false;
-    const assetUrls = Array.from(
-      new Set([...DESKTOP_APPS.map((a) => a.icon), ...EXTRA_ASSETS]),
-    );
+    const desktopIcons = DESKTOP_APPS.filter((a) => a.showOnDesktop !== false).map((a) => a.icon);
+    const assetUrls = Array.from(new Set([...desktopIcons, ...CRITICAL_WALLPAPERS]));
     const total = assetUrls.length + 1;
     let completed = 0;
 
@@ -63,11 +65,11 @@ export function BootScreen() {
     );
 
     const minDisplayDelay = new Promise<void>((resolve) => {
-      window.setTimeout(resolve, 1100);
+      window.setTimeout(resolve, 500);
     });
 
     const safetyTimeout = new Promise<void>((resolve) => {
-      window.setTimeout(resolve, 5000);
+      window.setTimeout(resolve, 4000);
     });
 
     Promise.race([
@@ -78,7 +80,14 @@ export function BootScreen() {
       setProgress(100);
       setFadingOut(true);
       window.setTimeout(() => {
-        if (!cancelled) setDismissed(true);
+        if (!cancelled) {
+          setDismissed(true);
+          // Warm secondary icons and wallpapers quietly after desktop becomes interactive.
+          const nonDesktopIcons = DESKTOP_APPS.filter((a) => a.showOnDesktop === false).map((a) => a.icon);
+          for (const url of new Set([...nonDesktopIcons, ...SECONDARY_ASSETS])) {
+            void preloadImage(url);
+          }
+        }
       }, 450);
     });
 
@@ -122,9 +131,9 @@ export function BootScreen() {
         </div>
 
         {/* Username */}
-        <h1 className="mt-4 text-[34px] font-light tracking-tight text-white drop-shadow">
+        <p className="mt-4 text-[34px] font-light tracking-tight text-white drop-shadow">
           User
-        </h1>
+        </p>
 
         {/* Windows 10 Ring Spinner + Welcome */}
         <div className="mt-3 flex items-center gap-3">

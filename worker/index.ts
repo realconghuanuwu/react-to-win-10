@@ -129,6 +129,21 @@ export default {
       return handleBrowse(request, url);
     }
 
-    return env.ASSETS.fetch(request);
+    const assetResponse = await env.ASSETS.fetch(request);
+
+    // Only expose the root homepage as an indexable HTML document; redirect
+    // unknown SPA fallback paths back to "/" to prevent duplicate URL indexing.
+    if (
+      (request.method === 'GET' || request.method === 'HEAD') &&
+      url.pathname !== '/' &&
+      url.pathname !== '/index.html'
+    ) {
+      const contentType = assetResponse.headers.get('content-type') || '';
+      if (contentType.includes('text/html')) {
+        return Response.redirect(`${url.origin}/`, 301);
+      }
+    }
+
+    return assetResponse;
   },
 };

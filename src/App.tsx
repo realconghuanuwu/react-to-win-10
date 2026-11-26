@@ -24,7 +24,11 @@ export function App() {
 
   return (
     <FluentProvider theme={win10Theme}>
-      <main className="relative w-screen h-screen overflow-hidden">
+      <main
+        aria-label="Windows 10 Online Simulator Desktop"
+        className="relative w-screen h-screen overflow-hidden"
+      >
+        <h1 className="sr-only">Windows 10 Online Simulator</h1>
         <Desktop />
         <WindowManager />
         <Taskbar />

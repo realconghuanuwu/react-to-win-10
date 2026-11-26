@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+
+Sitemap: https://win-10-simulator.dftactics.win/sitemap.xml
