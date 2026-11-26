@@ -242,6 +242,7 @@ interface FileSystemState {
     fileName: string,
     blob: Blob,
   ) => Promise<string | null>;
+  updateMediaFile: (id: string, blob: Blob) => Promise<void>;
   updateFileContent: (id: string, content: string) => void;
   renameNode: (id: string, newName: string) => void;
   deleteNodes: (ids: string[]) => void;
@@ -410,6 +411,8 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
 
       const latest = get();
       const name = getUniqueNodeName(latest.nodes, parentId, baseName, ext);
+      const isImage =
+        blob.type.startsWith('image/') || /\.(png|jpe?g|bmp|webp|gif|svg)$/i.test(trimmed);
       const nextNodes: Record<string, FsNode> = {
         ...latest.nodes,
         [id]: {
@@ -417,7 +420,7 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
           parentId,
           name,
           kind: 'file',
-          icon: '/assets/icons/media-file.svg',
+          icon: isImage ? '/assets/icons/photos.png' : '/assets/icons/media-file.svg',
           mimeType: blob.type || 'video/mp4',
           sizeBytes: blob.size,
           blobId,
@@ -432,6 +435,33 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
       set({ nodes: nextNodes, storageUsedBytes: Math.max(latest.storageUsedBytes, storageUsedBytes) });
       await persisted;
       return id;
+    },
+
+    updateMediaFile: async (id, blob) => {
+      const target = get().nodes[id];
+      if (!target || target.kind !== 'file') return;
+
+      const newBlobId = `media-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      await saveMediaBlob(newBlobId, blob);
+
+      const latest = get();
+      const current = latest.nodes[id];
+      if (!current || current.kind !== 'file') return;
+
+      const nextNodes: Record<string, FsNode> = {
+        ...latest.nodes,
+        [id]: {
+          ...current,
+          blobId: newBlobId,
+          mimeType: blob.type || current.mimeType,
+          sizeBytes: blob.size,
+          modifiedAt: Date.now(),
+        },
+      };
+      const storageUsedBytes = persistNodes(nextNodes, [id]);
+      const persisted = waitForFileSystemWrite();
+      set({ nodes: nextNodes, storageUsedBytes });
+      await persisted;
     },
 
     createTextFile: (parentId, desiredName, initialContent = '') => {

@@ -65,6 +65,7 @@ export function Desktop() {
   const openNotepadFile = useDesktopStore((state) => state.openNotepadFile);
   const openOfficeFile = useDesktopStore((state) => state.openOfficeFile);
   const openMediaFile = useDesktopStore((state) => state.openMediaFile);
+  const openPaintFile = useDesktopStore((state) => state.openPaintFile);
 
   const fsNodes = useFileSystemStore((state) => state.nodes);
   const renameFsNode = useFileSystemStore((state) => state.renameNode);
@@ -189,6 +190,15 @@ export function Desktop() {
         } else if (lower.endsWith('.unisheet') || lower.endsWith('.xls') || lower.endsWith('.xlsx')) {
           openOfficeFile('excel', item.id);
         } else if (
+          lower.endsWith('.png') ||
+          lower.endsWith('.jpg') ||
+          lower.endsWith('.jpeg') ||
+          lower.endsWith('.bmp') ||
+          lower.endsWith('.webp') ||
+          lower.endsWith('.gif')
+        ) {
+          openPaintFile(item.id);
+        } else if (
           lower.endsWith('.mp4') ||
           lower.endsWith('.webm') ||
           lower.endsWith('.mp3') ||
@@ -204,7 +214,7 @@ export function Desktop() {
         openApp(item.id);
       }
     },
-    [openApp, openNotepadFile, openOfficeFile],
+    [openApp, openNotepadFile, openOfficeFile, openMediaFile, openPaintFile],
   );
 
   const handleCommitRename = useCallback(

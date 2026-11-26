@@ -180,6 +180,8 @@ interface DesktopState {
   officeOpenNonce: number;
   mediaPlayerFileId: string | null;
   mediaPlayerOpenNonce: number;
+  paintActiveFileId: string | null;
+  paintOpenNonce: number;
   iconSize: DesktopIconSize;
   showDesktopIcons: boolean;
   sortBy: DesktopSortField;
@@ -229,6 +231,7 @@ interface DesktopState {
   openNotepadFile: (fileId: string | null) => void;
   openOfficeFile: (appId: 'word' | 'excel', fileId: string | null) => void;
   openMediaFile: (fileId: string | null) => void;
+  openPaintFile: (fileId: string | null) => void;
   toggleTaskbarApp: (id: string) => void;
   focusWindow: (id: string) => void;
   minimizeWindow: (id: string) => void;
@@ -283,10 +286,11 @@ function createInitialWindowLayout(
   const isOffice = appId === 'word' || appId === 'excel';
   const isStudio = appId === 'code-studio';
   const isPdfTool = appId === 'pdf-tool';
-  const targetWidth = isCalc ? 340 : isOffice || isStudio || isPdfTool ? 1120 : isChrome ? 1040 : isExplorer ? 940 : isSettings ? 840 : DEFAULT_WIDTH;
-  const targetHeight = isCalc ? 540 : isOffice || isStudio || isPdfTool ? 700 : isChrome ? 680 : isExplorer ? 600 : isSettings ? 580 : DEFAULT_HEIGHT;
-  const minWidth = isCalc ? 320 : isOffice ? 680 : isChrome ? 520 : isExplorer ? 620 : isSettings ? 580 : 320;
-  const minHeight = isCalc ? 480 : isOffice ? 460 : isStudio || isChrome ? 380 : isPdfTool ? 360 : isExplorer ? 400 : isSettings ? 420 : 220;
+  const isPaint = appId === 'paint';
+  const targetWidth = isCalc ? 340 : isOffice || isStudio || isPdfTool ? 1120 : isPaint ? 1080 : isChrome ? 1040 : isExplorer ? 940 : isSettings ? 840 : DEFAULT_WIDTH;
+  const targetHeight = isCalc ? 540 : isOffice || isStudio || isPdfTool ? 700 : isPaint ? 680 : isChrome ? 680 : isExplorer ? 600 : isSettings ? 580 : DEFAULT_HEIGHT;
+  const minWidth = isCalc ? 320 : isOffice || isPaint ? 680 : isChrome ? 520 : isExplorer ? 620 : isSettings ? 580 : 320;
+  const minHeight = isCalc ? 480 : isOffice ? 460 : isPaint ? 420 : isStudio || isChrome ? 380 : isPdfTool ? 360 : isExplorer ? 400 : isSettings ? 420 : 220;
 
   const width = Math.min(targetWidth, Math.max(minWidth, vw - 48));
   const height = Math.min(targetHeight, Math.max(minHeight, vh - 48));
@@ -342,6 +346,8 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
   officeOpenNonce: 0,
   mediaPlayerFileId: null,
   mediaPlayerOpenNonce: 0,
+  paintActiveFileId: null,
+  paintOpenNonce: 0,
   iconSize: 'medium',
   showDesktopIcons: true,
   sortBy: 'default',
@@ -751,6 +757,7 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
         explorerStartFolderId: nextStartFolder,
         explorerReveal,
         notepadActiveFileId: id === 'notepad' ? null : state.notepadActiveFileId,
+        paintActiveFileId: id === 'paint' ? null : state.paintActiveFileId,
         officeActiveFileId: id === 'word' || id === 'excel' ? null : state.officeActiveFileId,
       };
     }),
@@ -893,6 +900,53 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
         isStartMenuOpen: false,
         notepadActiveFileId: fileId,
         notepadOpenNonce: state.notepadOpenNonce + 1,
+      };
+    }),
+
+  openPaintFile: (fileId) =>
+    set((state) => {
+      const app = state.apps.find((item) => item.id === 'paint');
+      if (!app) return state;
+
+      const nextZ = state.topZIndex + 1;
+      const existing = state.windows.find((w) => w.id === 'paint');
+
+      if (existing) {
+        return {
+          windows: state.windows.map((w) =>
+            w.id === 'paint' ? { ...w, isMinimized: false, zIndex: nextZ } : w,
+          ),
+          activeAppId: 'paint',
+          topZIndex: nextZ,
+          contextMenuPos: null,
+          isStartMenuOpen: false,
+          paintActiveFileId: fileId,
+          paintOpenNonce: state.paintOpenNonce + 1,
+        };
+      }
+
+      const layout = createInitialWindowLayout(
+        'paint',
+        state.windows.length,
+        state.taskbarSettings,
+      );
+      const newWindow: AppWindow = {
+        id: 'paint',
+        title: 'Untitled - Paint',
+        icon: app.icon,
+        ...layout,
+        zIndex: nextZ,
+        isMinimized: false,
+      };
+
+      return {
+        windows: [...state.windows, newWindow],
+        activeAppId: 'paint',
+        topZIndex: nextZ,
+        contextMenuPos: null,
+        isStartMenuOpen: false,
+        paintActiveFileId: fileId,
+        paintOpenNonce: state.paintOpenNonce + 1,
       };
     }),
 

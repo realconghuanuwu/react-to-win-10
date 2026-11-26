@@ -10,6 +10,7 @@ import { ChromeApp } from '../Apps/ChromeApp';
 import { FileExplorerApp } from '../Apps/FileExplorerApp';
 import { MediaPlayerApp } from '../Apps/MediaPlayerApp';
 import { NotepadApp } from '../Apps/NotepadApp';
+import { PaintApp } from '../Apps/PaintApp';
 import { PersonalizationSettingsApp } from '../Apps/PersonalizationSettingsApp';
 import { TaskManagerApp } from '../Apps/TaskManagerApp';
 import { YouTubeDownloaderApp } from '../Apps/YouTubeDownloaderApp';
@@ -284,6 +285,7 @@ export function WindowFrame({ win, onSnapPreview, onSnapDrop }: WindowFrameProps
         <div className="flex items-center gap-2 min-w-0 pr-2">
           {(isDarkApp ||
             win.id === 'notepad' ||
+            win.id === 'paint' ||
             win.id === 'task-manager' ||
             win.id === 'chrome' ||
             win.id === 'word' ||
@@ -360,6 +362,8 @@ export function WindowFrame({ win, onSnapPreview, onSnapDrop }: WindowFrameProps
         <ChromeApp windowId={win.id} />
       ) : win.id === 'notepad' ? (
         <NotepadApp windowId={win.id} />
+      ) : win.id === 'paint' ? (
+        <PaintApp windowId={win.id} />
       ) : win.id === 'code-studio' ? (
         <Suspense fallback={<div className="grid flex-1 place-items-center text-sm text-white">Loading editor…</div>}>
           <CodeStudioApp />
