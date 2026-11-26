@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { FluentProvider } from '@fluentui/react-components';
+import { BootScreen } from './components/Boot/BootScreen';
 import { Desktop } from './components/Desktop/Desktop';
 import { Taskbar } from './components/Taskbar/Taskbar';
 import { WindowManager } from './components/Window/WindowManager';
@@ -26,6 +27,7 @@ export function App() {
         <Desktop />
         <WindowManager />
         <Taskbar />
+        <BootScreen />
       </main>
     </FluentProvider>
   );
