@@ -18,6 +18,7 @@ interface DesktopIconProps {
   isSelected: boolean;
   isRenaming: boolean;
   isDragging?: boolean;
+  isCut: boolean;
   onSelect: (id: string, multiSelect: boolean) => void;
   onOpen: (item: DesktopDisplayItem) => void;
   onRightClick: (id: string, x: number, y: number) => void;
@@ -41,6 +42,7 @@ export function DesktopIcon({
   isSelected,
   isRenaming,
   isDragging = false,
+  isCut,
   onSelect,
   onOpen,
   onRightClick,
@@ -95,7 +97,7 @@ export function DesktopIcon({
       className={[
         'absolute group flex flex-col items-center justify-start px-1 py-1 rounded-[2px] border transition-colors duration-75 cursor-default outline-none select-none',
         cell,
-        isDragging ? 'opacity-40' : 'opacity-100',
+        isDragging || isCut ? 'opacity-40' : 'opacity-100',
         isSelected
           ? 'bg-white/22 border-white/45'
           : 'border-transparent hover:bg-white/12 hover:border-white/25',

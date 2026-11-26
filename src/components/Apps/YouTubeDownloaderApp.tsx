@@ -1,6 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { formatStorageBytes, useFileSystemStore } from '../../store/useFileSystemStore';
 import { useDesktopStore } from '../../store/useDesktopStore';
+import { notify } from '../../store/useNotificationStore';
+
+const notificationSource = 'YouTube Downloader';
 
 interface VideoInfo {
   title: string;
@@ -120,6 +123,8 @@ export function YouTubeDownloaderApp() {
     setIsDownloading(true);
     setStatusMessage('Downloading & processing with yt-dlp + ffmpeg... This may take a moment.');
 
+    let browserDownloadStarted = false;
+    let downloadUrl: string | undefined;
     try {
       const quality = mode === 'audio' ? audioQuality : videoQuality;
       const res = await fetch('/api/yt/download', {
@@ -142,15 +147,18 @@ export function YouTubeDownloaderApp() {
 
       const blob = await res.blob();
       const blobUrl = URL.createObjectURL(blob);
+      downloadUrl = blobUrl;
 
       if (saveTarget === 'pc' || saveTarget === 'both') {
         triggerBrowserDownload(blobUrl, fileName);
+        browserDownloadStarted = true;
       }
 
       let win10NodeId: string | null = null;
       const targetFolder = mode === 'audio' && win10Folder === 'videos' ? 'music' : win10Folder;
       if (saveTarget === 'win10' || saveTarget === 'both') {
         win10NodeId = await createMediaFile(targetFolder, fileName, blob);
+        if (!win10NodeId) throw new Error('The selected folder is unavailable.');
       }
 
       setHistory((prev) => [
@@ -167,16 +175,34 @@ export function YouTubeDownloaderApp() {
         ...prev,
       ]);
 
-      setStatusMessage(
-        saveTarget === 'pc'
-          ? `Downloaded "${fileName}" to your PC.`
-          : saveTarget === 'win10'
-            ? `Saved "${fileName}" to Win 10 (${targetFolder}).`
-            : `Downloaded "${fileName}" to your PC and saved to Win 10 (${targetFolder}).`,
-      );
+      const savedName = win10NodeId ? useFileSystemStore.getState().nodes[win10NodeId]?.name ?? fileName : fileName;
+      const message = win10NodeId
+        ? `Saved "${savedName}" to Win 10.${browserDownloadStarted ? ' Browser download started.' : ''}`
+        : `Browser download started for "${fileName}".`;
+      setStatusMessage(message);
+      notify({
+        source: notificationSource,
+        title: win10NodeId ? 'Download saved' : 'Browser download started',
+        message,
+        kind: 'success',
+        target: win10NodeId ? { fileId: win10NodeId, folderId: targetFolder } : undefined,
+      });
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Download failed.');
+      if (downloadUrl) {
+        const failedUrl = downloadUrl;
+        window.setTimeout(() => URL.revokeObjectURL(failedUrl), 1500);
+      }
+      const detail = err instanceof Error ? err.message : 'Download failed.';
+      const message = browserDownloadStarted ? `Browser download started. Could not save to Win 10. ${detail}` : detail;
+      setErrorMessage(message);
       setStatusMessage(null);
+      notify({
+        source: notificationSource,
+        title: browserDownloadStarted ? 'Could not save to Win 10' : 'Download failed',
+        message,
+        kind: 'error',
+        target: { appId: 'yt-downloader' },
+      });
     } finally {
       setIsDownloading(false);
     }

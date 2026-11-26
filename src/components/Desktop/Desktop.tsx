@@ -16,6 +16,7 @@ import {
 } from '../../store/useDesktopStore';
 import { useFileSystemStore } from '../../store/useFileSystemStore';
 import { getWallpaperCssProps } from '../Apps/PersonalizationSettingsApp';
+import { handleFileClipboardShortcut } from '../../utils/fileClipboardShortcuts';
 import { DesktopContextMenu } from './DesktopContextMenu';
 import { DesktopIcon, type DesktopDisplayItem } from './DesktopIcon';
 
@@ -67,6 +68,7 @@ export function Desktop() {
 
   const fsNodes = useFileSystemStore((state) => state.nodes);
   const renameFsNode = useFileSystemStore((state) => state.renameNode);
+  const clipboard = useFileSystemStore((state) => state.clipboard);
   const deleteFsNodes = useFileSystemStore((state) => state.deleteNodes);
 
   const [marquee, setMarquee] = useState<MarqueeRect | null>(null);
@@ -351,6 +353,18 @@ export function Desktop() {
   return (
     <div
       ref={containerRef}
+      tabIndex={-1}
+      onPointerDownCapture={(e) => {
+        if (e.target instanceof Element && !e.target.closest('input, textarea, [contenteditable]')) {
+          e.currentTarget.focus({ preventScroll: true });
+        }
+      }}
+      onKeyDown={(e) => {
+        const desktop = useDesktopStore.getState();
+        if (!desktop.isStartMenuOpen && !desktop.isTaskViewOpen) {
+          handleFileClipboardShortcut(e.nativeEvent, selectedIds, 'desktop');
+        }
+      }}
       data-desktop-canvas="true"
       onMouseDown={handleMouseDown}
       onContextMenu={handleContextMenu}
@@ -382,6 +396,7 @@ export function Desktop() {
                 top={PADDING + slot.row * cellStep.h}
                 isSelected={selectedIds.includes(item.id)}
                 isRenaming={renamingIconId === item.id}
+                isCut={clipboard?.mode === 'cut' && clipboard.ids.includes(item.id)}
                 isDragging={dragPreview?.item.id === item.id}
                 onSelect={(id, multi) => {
                   if (suppressNextClickRef.current) return;
@@ -389,7 +404,7 @@ export function Desktop() {
                 }}
                 onOpen={handleOpenItem}
                 onRightClick={(id, x, y) => {
-                  selectIcon(id, false);
+                  if (!selectedIds.includes(id)) selectIcon(id, false);
                   setContextMenuPos({ x, y, targetId: id });
                 }}
                 onDragStart={handleIconDragStart}

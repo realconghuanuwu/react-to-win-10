@@ -6,8 +6,8 @@ import {
   Tooltip,
 } from '@fluentui/react-components';
 import { useDesktopStore } from '../../store/useDesktopStore';
+import { ActionCenter } from './ActionCenter';
 import {
-  Win10ActionCenterIcon,
   Win10ChevronUpIcon,
   Win10InkIcon,
   Win10PeopleIcon,
@@ -396,15 +396,7 @@ export function SystemTray() {
       )}
 
       {settings.systemIcons.actionCenter && (
-        <Tooltip content="No new notifications" relationship="label" positioning={popoverPos}>
-          <button
-            type="button"
-            aria-label="Action Center"
-            className={`flex items-center justify-center ${isVertical ? btnSizeClass : 'w-9 h-full'} hover:bg-white/12 transition-colors cursor-default`}
-          >
-            <Win10ActionCenterIcon className="text-white/95" />
-          </button>
-        </Tooltip>
+        <ActionCenter positioning={popoverPos} sizeClass={isVertical ? btnSizeClass : 'w-9 h-full'} />
       )}
 
       <Tooltip content="Show desktop" relationship="label" positioning={popoverPos}>

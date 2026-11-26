@@ -7,7 +7,8 @@ import UniverPresetSheetsCoreEnUS from '@univerjs/preset-sheets-core/locales/en-
 import '@univerjs/preset-docs-core/lib/index.css';
 import '@univerjs/preset-sheets-core/lib/index.css';
 import { useDesktopStore } from '../../store/useDesktopStore';
-import { useFileSystemStore } from '../../store/useFileSystemStore';
+import { useFileSystemStore, waitForFileSystemWrite } from '../../store/useFileSystemStore';
+import { notify } from '../../store/useNotificationStore';
 import { OfficeHomeScreen } from './OfficeHomeScreen';
 
 export type OfficeMode = 'word' | 'excel';
@@ -72,6 +73,8 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState('');
   const [exporting, setExporting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const notificationSource = mode === 'word' ? 'Word' : 'Excel';
 
   useEffect(() => () => { importRequest.current++; }, []);
 
@@ -256,30 +259,42 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
   };
 
   /** Save to virtual Win10 FS (Documents folder) */
-  const handleSaveToWin10 = () => {
-    const snapshot = getCurrentSnapshot();
-    if (!snapshot) { setStatusMessage('Nothing to save'); return; }
-    const serialized = JSON.stringify(snapshot);
-
-    if (currentFileId && nodes[currentFileId]?.kind === 'file') {
-      updateFileContent(currentFileId, serialized);
-      setStatusMessage(`Saved "${nodes[currentFileId].name}" to This PC`);
-      return;
-    }
-
-    const baseName =
-      documentTitle.replace(/\.(unidoc|unisheet|docx?|xlsx?)$/i, '') ||
-      (mode === 'word' ? 'Document' : 'Book');
-    const desiredName = `${baseName}${extension}`;
-    const targetFolderId = nodes.documents ? 'documents' : 'desktop';
-    const createdId = createTextFile(targetFolderId, desiredName, serialized);
-    if (createdId) {
-      const createdNode = useFileSystemStore.getState().nodes[createdId];
-      setCurrentFileId(createdId);
-      if (createdNode) {
-        setDocumentTitle(createdNode.name);
-        setStatusMessage(`Saved to Documents\\${createdNode.name}`);
+  const handleSaveToWin10 = async () => {
+    setSaving(true);
+    try {
+      const snapshot = getCurrentSnapshot();
+      if (!snapshot) { setStatusMessage('Nothing to save'); return; }
+      const serialized = JSON.stringify(snapshot);
+      let fileId = currentFileId;
+      if (fileId && useFileSystemStore.getState().nodes[fileId]?.kind === 'file') {
+        updateFileContent(fileId, serialized);
+      } else {
+        const baseName = documentTitle.replace(/\.(unidoc|unisheet|docx?|xlsx?)$/i, '') ||
+          (mode === 'word' ? 'Document' : 'Book');
+        fileId = createTextFile(nodes.documents ? 'documents' : 'desktop', `${baseName}${extension}`, serialized);
+        if (fileId) {
+          setCurrentFileId(fileId);
+          setDocumentTitle(useFileSystemStore.getState().nodes[fileId].name);
+        }
       }
+      if (!fileId) throw new Error('The destination folder is unavailable.');
+      const saved = useFileSystemStore.getState().nodes[fileId];
+      await waitForFileSystemWrite();
+      const message = `Saved "${saved.name}" to Win 10.`;
+      setStatusMessage(message);
+      notify({
+        source: notificationSource,
+        title: 'File saved',
+        message,
+        kind: 'success',
+        target: { fileId, folderId: saved.parentId ?? 'this-pc' },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not write the file to local storage.';
+      setStatusMessage('Could not save to Win 10.');
+      notify({ source: notificationSource, title: 'Could not save to Win 10', message, kind: 'error' });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -327,9 +342,13 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
       link.download = `${documentTitle.replace(/\.(unidoc|unisheet|docx?|xlsx?)$/i, '')}${officeExtension}`;
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
-      setStatusMessage(`Downloaded ${link.download}`);
+      const message = `Browser download started for "${link.download}".`;
+      setStatusMessage(message);
+      notify({ source: notificationSource, title: 'Browser download started', message, kind: 'success' });
     } catch {
-      setStatusMessage(`Could not export ${officeExtension}.`);
+      const message = `Could not export ${officeExtension}.`;
+      setStatusMessage(message);
+      notify({ source: notificationSource, title: 'Export failed', message, kind: 'error' });
     } finally {
       setExporting(false);
     }
@@ -408,9 +427,10 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
           <button
             type="button"
             onClick={handleSaveToWin10}
+            disabled={saving}
             className={`px-2.5 py-1 rounded text-[12px] font-medium bg-white/15 transition-colors cursor-default ${brandHover}`}
           >
-            Save to Win 10
+            {saving ? 'Saving…' : 'Save to Win 10'}
           </button>
           <button
             type="button"

@@ -1,12 +1,28 @@
-import { useEffect } from 'react';
-import { getTaskbarInsets, useDesktopStore } from '../../store/useDesktopStore';
+import { useEffect, useRef, useState } from 'react';
+import {
+  getSnapBounds,
+  getTaskbarInsets,
+  useDesktopStore,
+  type AppWindow,
+  type SnapSide,
+  type WindowBounds,
+} from '../../store/useDesktopStore';
 import { WindowFrame } from './WindowFrame';
+
+function matchesBounds(win: AppWindow, bounds: WindowBounds | null) {
+  return bounds && !win.isMinimized && !win.isMaximized &&
+    win.x === bounds.x && win.y === bounds.y && win.width === bounds.width && win.height === bounds.height;
+}
 
 export function WindowManager() {
   const windows = useDesktopStore((state) => state.windows);
   const taskbarSettings = useDesktopStore((state) => state.taskbarSettings);
   const isPeekingDesktop = useDesktopStore((state) => state.isPeekingDesktop);
   const snapActiveWindow = useDesktopStore((state) => state.snapActiveWindow);
+  const snapWindow = useDesktopStore((state) => state.snapWindow);
+  const [previewSide, setPreviewSide] = useState<SnapSide | null>(null);
+  const [assist, setAssist] = useState<{ sourceId: string; side: SnapSide } | null>(null);
+  const chooserRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     const handleSnapShortcut = (event: KeyboardEvent) => {
@@ -17,6 +33,7 @@ export function WindowManager() {
       if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
 
       if (snapActiveWindow(event.key === 'ArrowLeft' ? 'left' : 'right')) {
+        setAssist(null);
         event.preventDefault();
         event.stopPropagation();
       }
@@ -27,6 +44,49 @@ export function WindowManager() {
   }, [snapActiveWindow]);
 
   const insets = getTaskbarInsets(taskbarSettings);
+  const previewBounds = previewSide && getSnapBounds(previewSide, taskbarSettings);
+  const assistBounds = assist && getSnapBounds(assist.side, taskbarSettings);
+  const sourceBounds = assist && getSnapBounds(assist.side === 'left' ? 'right' : 'left', taskbarSettings);
+  const source = assist && windows.find((item) => item.id === assist.sourceId);
+  const candidates = assist && source && matchesBounds(source, sourceBounds)
+    ? windows.filter((item) => item.id !== assist.sourceId).sort((a, b) => b.zIndex - a.zIndex)
+    : [];
+  const showAssist = !!assistBounds && !isPeekingDesktop && candidates.length > 0 &&
+    !candidates.some((candidate) => matchesBounds(candidate, assistBounds));
+
+  useEffect(() => {
+    if (!showAssist) return;
+    const dismiss = () => setAssist(null);
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !chooserRef.current?.contains(event.target)) dismiss();
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        dismiss();
+      }
+    };
+    chooserRef.current?.querySelector('button')?.focus({ preventScroll: true });
+    window.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('resize', dismiss);
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('resize', dismiss);
+    };
+  }, [showAssist]);
+
+  const handleSnapDrop = (id: string, side: SnapSide) => {
+    if (!snapWindow(id, side)) return;
+    const otherSide = side === 'left' ? 'right' : 'left';
+    const state = useDesktopStore.getState();
+    const remaining = state.windows.filter((item) => item.id !== id);
+    const bounds = getSnapBounds(otherSide, state.taskbarSettings);
+    setAssist(remaining.length && !remaining.some((item) => matchesBounds(item, bounds))
+      ? { sourceId: id, side: otherSide }
+      : null);
+  };
 
   return (
     <div
@@ -42,9 +102,52 @@ export function WindowManager() {
         isPeekingDesktop ? 'opacity-10' : 'opacity-100',
       ].join(' ')}
     >
-      {windows.map((win) => (
-        <WindowFrame key={win.id} win={win} />
-      ))}
+      <div className="absolute inset-0 z-0">
+        {windows.map((win) => (
+          <WindowFrame key={win.id} win={win} onSnapPreview={setPreviewSide} onSnapDrop={handleSnapDrop} />
+        ))}
+      </div>
+      {previewBounds && (
+        <div
+          aria-hidden="true"
+          data-snap-preview={previewSide}
+          style={{ left: previewBounds.x, top: previewBounds.y, width: previewBounds.width, height: previewBounds.height }}
+          className="pointer-events-none absolute z-10 border-2 border-[#66baff] bg-[#0078d7]/25"
+        />
+      )}
+      {showAssist && assist && assistBounds && (
+        <section
+          ref={chooserRef}
+          aria-label="Snap Assist"
+          style={{ left: assistBounds.x, top: assistBounds.y, width: assistBounds.width, height: assistBounds.height }}
+          className="pointer-events-auto absolute z-20 flex flex-col gap-4 overflow-auto bg-[#1b1b1b]/95 p-5 text-white shadow-lg backdrop-blur-md"
+        >
+          <h2 className="text-sm font-semibold">Choose a window</h2>
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))] gap-2">
+            {candidates.map((candidate) => (
+              <button
+                key={candidate.id}
+                type="button"
+                onClick={() => {
+                  snapWindow(candidate.id, assist.side);
+                  setAssist(null);
+                }}
+                className="flex min-w-0 items-center gap-3 border border-white/20 bg-white/5 px-3 py-3 text-left text-sm hover:bg-white/15 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#66baff]"
+              >
+                <img src={candidate.icon} alt="" className="h-6 w-6 shrink-0 object-contain" />
+                <span className="truncate" title={candidate.title}>{candidate.title}</span>
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => setAssist(null)}
+            className="self-start border border-white/20 px-3 py-2 text-sm hover:bg-white/15 focus-visible:outline-2 focus-visible:outline-[#66baff]"
+          >
+            Dismiss
+          </button>
+        </section>
+      )}
     </div>
   );
 }

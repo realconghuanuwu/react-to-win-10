@@ -7,6 +7,7 @@ import {
   type FsNode,
 } from '../../store/useFileSystemStore';
 import { getFileTypeInfo } from '../../utils/fileTypes';
+import { handleFileClipboardShortcut } from '../../utils/fileClipboardShortcuts';
 import { openVirtualFile } from '../../utils/openVirtualFile';
 import {
   ExplorerContextMenu,
@@ -33,6 +34,7 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
   const createFolder = useFileSystemStore((state) => state.createFolder);
   const createTextFile = useFileSystemStore((state) => state.createTextFile);
   const renameNode = useFileSystemStore((state) => state.renameNode);
+  const clipboard = useFileSystemStore((state) => state.clipboard);
   const deleteNodes = useFileSystemStore((state) => state.deleteNodes);
   const restoreNodes = useFileSystemStore((state) => state.restoreNodes);
   const emptyRecycleBin = useFileSystemStore((state) => state.emptyRecycleBin);
@@ -196,6 +198,11 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
       const tag = (e.target as HTMLElement | null)?.tagName;
       const isEditingText = tag === 'INPUT' || tag === 'TEXTAREA';
 
+      const desktop = useDesktopStore.getState();
+      if (!desktop.isStartMenuOpen && !desktop.isTaskViewOpen &&
+        (e.target === document.body || isThisExplorerTarget(e.target)) &&
+        handleFileClipboardShortcut(e, selectedIds, currentFolderId)) return;
+
       if ((e.altKey && e.key === 'ArrowLeft') || e.key === 'BrowserBack') {
         e.preventDefault();
         goBack();
@@ -219,7 +226,7 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
       window.removeEventListener('mouseup', handleMouseUp);
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [activeAppId, windowId, goBack, goForward, goUp]);
+  }, [activeAppId, windowId, goBack, goForward, goUp, selectedIds, currentFolderId]);
 
   const breadcrumbs = useMemo(() => {
     const chain: FsNode[] = [];
@@ -509,6 +516,7 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
         className={[
           'flex border transition-colors cursor-default',
           containerLayoutClass,
+          clipboard?.mode === 'cut' && clipboard.ids.includes(item.id) ? 'opacity-50' : '',
           isSelected
             ? 'bg-[#363636] border-[#666666]'
             : 'border-transparent hover:bg-[#2a2a2a]',
@@ -1019,6 +1027,7 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
           containerHeight={rootRef.current?.clientHeight ?? 568}
           currentFolderId={currentFolderId}
           canCreate={canCreateFolder}
+          selectedIds={selectedIds}
           targetNode={contextMenu.targetNodeId ? nodes[contextMenu.targetNodeId] ?? null : null}
           viewMode={viewMode}
           sortField={sortField}

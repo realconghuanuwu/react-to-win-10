@@ -93,6 +93,18 @@ export interface WindowBounds {
   height: number;
 }
 
+export type SnapSide = 'left' | 'right';
+
+export function getSnapBounds(side: SnapSide, settings: TaskbarSettings): WindowBounds | null {
+  if (typeof window === 'undefined') return null;
+  const insets = getTaskbarInsets(settings);
+  const width = window.innerWidth - insets.left - insets.right;
+  const height = window.innerHeight - insets.top - insets.bottom;
+  if (width < 2 || height < 1) return null;
+  const split = Math.floor(width / 2);
+  return { x: side === 'left' ? 0 : split, y: 0, width: side === 'left' ? split : width - split, height };
+}
+
 export interface AppWindow extends WindowBounds {
   id: string;
   title: string;
@@ -102,6 +114,7 @@ export interface AppWindow extends WindowBounds {
   zIndex: number;
   isMinimized: boolean;
   isMaximized: boolean;
+  snapRestoreBounds?: WindowBounds;
 }
 
 export type DesktopIconSize = 'small' | 'medium' | 'large';
@@ -220,7 +233,8 @@ interface DesktopState {
   focusWindow: (id: string) => void;
   minimizeWindow: (id: string) => void;
   toggleMaximizeWindow: (id: string) => void;
-  snapActiveWindow: (side: 'left' | 'right') => boolean;
+  snapActiveWindow: (side: SnapSide) => boolean;
+  snapWindow: (id: string, side: SnapSide) => boolean;
   closeWindow: (id: string) => void;
   updateWindowBounds: (id: string, bounds: WindowBounds, unmaximize?: boolean) => void;
   setWindowTitle: (id: string, title: string) => void;
@@ -977,22 +991,30 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
     }),
 
   snapActiveWindow: (side) => {
-    const { activeAppId, windows, taskbarSettings, updateWindowBounds } = get();
+    const { activeAppId, windows, snapWindow } = get();
     const active = windows.find((item) => item.id === activeAppId);
-    if (!active || active.isMinimized || typeof window === 'undefined') return false;
+    return !!active && !active.isMinimized && snapWindow(active.id, side);
+  },
 
-    const insets = getTaskbarInsets(taskbarSettings);
-    const areaWidth = window.innerWidth - insets.left - insets.right;
-    const areaHeight = window.innerHeight - insets.top - insets.bottom;
-    if (areaWidth < 2 || areaHeight < 1) return false;
-
-    const half = Math.floor(areaWidth / 2);
-    updateWindowBounds(active.id, {
-      x: side === 'left' ? 0 : half,
-      y: 0,
-      width: side === 'left' ? half : areaWidth - half,
-      height: areaHeight,
-    }, true);
+  snapWindow: (id, side) => {
+    const state = get();
+    const target = state.windows.find((item) => item.id === id);
+    const bounds = getSnapBounds(side, state.taskbarSettings);
+    if (!target || !bounds) return false;
+    const { x, y, width, height } = target;
+    const zIndex = state.topZIndex + 1;
+    set({
+      windows: state.windows.map((item) => item.id === id ? {
+        ...item,
+        ...bounds,
+        snapRestoreBounds: item.snapRestoreBounds ?? { x, y, width, height },
+        isMaximized: false,
+        isMinimized: false,
+        zIndex,
+      } : item),
+      activeAppId: id,
+      topZIndex: zIndex,
+    });
     return true;
   },
 
@@ -1014,6 +1036,7 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
           ? {
               ...w,
               ...bounds,
+              snapRestoreBounds: undefined,
               isMaximized: unmaximize ? false : w.isMaximized,
             }
           : w,
@@ -1088,6 +1111,7 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
           return {
             ...w,
             isMaximized: false,
+            snapRestoreBounds: undefined,
             x: 12 + offset,
             y: 12 + offset,
             width,
@@ -1117,6 +1141,7 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
           return {
             ...w,
             isMaximized: false,
+            snapRestoreBounds: undefined,
             x: 0,
             y: idx * slotH,
             width: Math.max(w.minWidth, areaW),
@@ -1149,6 +1174,7 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
           return {
             ...w,
             isMaximized: false,
+            snapRestoreBounds: undefined,
             x: col * cellW,
             y: row * cellH,
             width: Math.max(w.minWidth, col === cols - 1 ? areaW - col * cellW : cellW),

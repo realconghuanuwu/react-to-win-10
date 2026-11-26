@@ -1,8 +1,9 @@
-import { Suspense, lazy, useRef, type PointerEvent as ReactPointerEvent } from 'react';
+import { Suspense, lazy, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   getTaskbarInsets,
   useDesktopStore,
   type AppWindow,
+  type SnapSide,
 } from '../../store/useDesktopStore';
 import { CalculatorApp } from '../Apps/CalculatorApp';
 import { ChromeApp } from '../Apps/ChromeApp';
@@ -22,6 +23,7 @@ const PdfToolApp = lazy(() => import('../Apps/pdf/PdfToolApp'));
 type ResizeDirection = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
 const TITLEBAR_HEIGHT = 32;
+const SNAP_EDGE_DISTANCE = 16;
 
 const RESIZE_HANDLES: Array<{ dir: ResizeDirection; className: string }> = [
   { dir: 'n', className: 'top-[-3px] left-1.5 right-1.5 h-1.5 cursor-ns-resize' },
@@ -36,9 +38,11 @@ const RESIZE_HANDLES: Array<{ dir: ResizeDirection; className: string }> = [
 
 interface WindowFrameProps {
   win: AppWindow;
+  onSnapPreview: (side: SnapSide | null) => void;
+  onSnapDrop: (id: string, side: SnapSide) => void;
 }
 
-export function WindowFrame({ win }: WindowFrameProps) {
+export function WindowFrame({ win, onSnapPreview, onSnapDrop }: WindowFrameProps) {
   const activeAppId = useDesktopStore((state) => state.activeAppId);
   const explorerStartFolderId = useDesktopStore((state) => state.explorerStartFolderId);
   const taskbarSettings = useDesktopStore((state) => state.taskbarSettings);
@@ -59,80 +63,96 @@ export function WindowFrame({ win }: WindowFrameProps) {
     win.id === 'yt-downloader' ||
     win.id === 'pdf-tool' ||
     win.id === 'media-player';
-  const dragSessionRef = useRef<boolean>(false);
-
   const handleTitleBarPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
-    if ((e.target as HTMLElement).closest('[data-window-control="true"]')) return;
+    if ((e.target as Element).closest('[data-window-control="true"]')) return;
 
     focusWindow(win.id);
 
     const startClientX = e.clientX;
     const startClientY = e.clientY;
-    const startX = win.x;
-    const startY = win.y;
-    const startWidth = win.width;
-    const startHeight = win.height;
-    const startedMaximized = win.isMaximized;
-    dragSessionRef.current = false;
+    const pointerId = e.pointerId;
+    const header = e.currentTarget;
+    const grabRatio = (e.clientX - header.getBoundingClientRect().left) / header.clientWidth;
+    const restore = win.snapRestoreBounds ?? win;
+    const shouldRestore = win.isMaximized || !!win.snapRestoreBounds;
+    let dragging = false;
+    let previewSide: SnapSide | null = null;
+
+    const getSnapSide = ({ clientX, clientY, pointerType }: PointerEvent): SnapSide | null => {
+      if (pointerType !== 'mouse') return null;
+      const insets = getTaskbarInsets(useDesktopStore.getState().taskbarSettings);
+      if (clientY < insets.top || clientY >= window.innerHeight - insets.bottom) return null;
+      const leftDistance = clientX - insets.left;
+      const rightDistance = window.innerWidth - insets.right - clientX;
+      if (Math.min(leftDistance, rightDistance) > SNAP_EDGE_DISTANCE) return null;
+      return leftDistance <= rightDistance ? 'left' : 'right';
+    };
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
       const dx = moveEvent.clientX - startClientX;
       const dy = moveEvent.clientY - startClientY;
 
-      if (!dragSessionRef.current && Math.hypot(dx, dy) < 4) {
-        return;
+      if (!dragging && Math.hypot(dx, dy) < 4) return;
+      dragging = true;
+      const nextSide = getSnapSide(moveEvent);
+      if (nextSide !== previewSide) {
+        previewSide = nextSide;
+        onSnapPreview(nextSide);
       }
-      dragSessionRef.current = true;
 
-      const insets = getTaskbarInsets(taskbarSettings);
+      const insets = getTaskbarInsets(useDesktopStore.getState().taskbarSettings);
       const desktopWidth = window.innerWidth - insets.left - insets.right;
       const desktopHeight = window.innerHeight - insets.top - insets.bottom;
 
-      if (startedMaximized) {
-        const restoredX = Math.max(
-          0,
-          Math.min(
-            moveEvent.clientX - Math.round(startWidth / 2),
-            desktopWidth - startWidth,
-          ),
-        );
-        const restoredY = Math.max(
-          0,
-          Math.min(moveEvent.clientY - 16, desktopHeight - TITLEBAR_HEIGHT),
-        );
-        updateWindowBounds(
-          win.id,
-          { x: restoredX, y: restoredY, width: startWidth, height: startHeight },
-          true,
-        );
-        return;
-      }
-
+      const x = shouldRestore ? moveEvent.clientX - insets.left - Math.round(restore.width * grabRatio) : win.x + dx;
+      const y = shouldRestore ? moveEvent.clientY - insets.top - 16 : win.y + dy;
       const nextX = Math.max(
-        -(startWidth - 80),
-        Math.min(startX + dx, desktopWidth - 80),
+        -(restore.width - 80),
+        Math.min(x, desktopWidth - 80),
       );
-      const nextY = Math.max(
-        0,
-        Math.min(startY + dy, desktopHeight - TITLEBAR_HEIGHT),
-      );
+      const nextY = Math.max(0, Math.min(y, desktopHeight - TITLEBAR_HEIGHT));
 
       updateWindowBounds(win.id, {
         x: nextX,
         y: nextY,
-        width: startWidth,
-        height: startHeight,
-      });
+        width: restore.width,
+        height: restore.height,
+      }, shouldRestore);
     };
 
-    const handlePointerUp = () => {
+    const cleanup = () => {
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerCancel);
+      window.removeEventListener('blur', handleWindowBlur);
+      window.removeEventListener('keydown', handleKeyDown);
+      if (header.hasPointerCapture(pointerId)) header.releasePointerCapture(pointerId);
+      if (previewSide) onSnapPreview(null);
+    };
+    const handlePointerUp = (event: PointerEvent) => {
+      if (event.pointerId !== pointerId) return;
+      const side = dragging ? getSnapSide(event) : null;
+      cleanup();
+      if (side) onSnapDrop(win.id, side);
+    };
+    const handlePointerCancel = (event: PointerEvent) => {
+      if (event.pointerId === pointerId) cleanup();
+    };
+    const handleWindowBlur = (event: FocusEvent) => {
+      if (event.target === window) cleanup();
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') cleanup();
     };
 
+    header.setPointerCapture(pointerId);
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerCancel);
+    window.addEventListener('blur', handleWindowBlur);
+    window.addEventListener('keydown', handleKeyDown);
   };
 
   const handleResizePointerDown = (

@@ -148,14 +148,22 @@ export async function estimateStorageStats(
   };
 }
 
-export async function saveAllFileSystemNodes(nodes: Record<string, FsNode>): Promise<void> {
+export async function saveAllFileSystemNodes(
+  nodes: Record<string, FsNode>,
+  unusedBlobIds: string[] = [],
+): Promise<void> {
   return enqueueWrite(async () => {
     const db = await getDb();
-    if (!db) return;
-    const tx = db.transaction(FS_STORE, 'readwrite');
-    await tx.store.clear();
-    await Promise.all(Object.values(nodes).map((node) => tx.store.put(node)));
-    await tx.done;
+    if (!db) throw new Error('Local file storage is unavailable.');
+    const tx = db.transaction([FS_STORE, MEDIA_STORE], 'readwrite');
+    const files = tx.objectStore(FS_STORE);
+    const media = tx.objectStore(MEDIA_STORE);
+    await files.clear();
+    await Promise.all([
+      ...Object.values(nodes).map((node) => files.put(node)),
+      ...unusedBlobIds.map((id) => media.delete(id)),
+      tx.done,
+    ]);
   });
 }
 
@@ -331,7 +339,7 @@ export async function loadOrInitPersonalizationSettings(
 export async function saveMediaBlob(id: string, blob: Blob): Promise<void> {
   return enqueueWrite(async () => {
     const db = await getDb();
-    if (!db) return;
+    if (!db) throw new Error('Local file storage is unavailable.');
     await db.put(MEDIA_STORE, { id, blob });
   });
 }
@@ -345,12 +353,4 @@ export async function getMediaBlob(id: string): Promise<Blob | null> {
   } catch {
     return null;
   }
-}
-
-export async function deleteMediaBlob(id: string): Promise<void> {
-  return enqueueWrite(async () => {
-    const db = await getDb();
-    if (!db) return;
-    await db.delete(MEDIA_STORE, id);
-  });
 }

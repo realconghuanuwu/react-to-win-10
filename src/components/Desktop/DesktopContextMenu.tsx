@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { findNextFreeSlot, getTaskbarInsets, useDesktopStore } from '../../store/useDesktopStore';
-import { useFileSystemStore } from '../../store/useFileSystemStore';
+import { useCanPasteFiles, useFileSystemStore, type FileClipboardMode } from '../../store/useFileSystemStore';
 import type { DesktopDisplayItem } from './DesktopIcon';
 
 type SubmenuKey = 'view' | 'sort' | 'new' | null;
@@ -63,6 +63,7 @@ export function DesktopContextMenu({
   const sortAppsByName = useDesktopStore((state) => state.sortAppsByName);
   const setIconPosition = useDesktopStore((state) => state.setIconPosition);
   const setRenamingIconId = useDesktopStore((state) => state.setRenamingIconId);
+  const selectedIds = useDesktopStore((state) => state.selectedIconIds);
   const setSelectedIconIds = useDesktopStore((state) => state.setSelectedIconIds);
   const openSettingsTab = useDesktopStore((state) => state.openSettingsTab);
 
@@ -71,6 +72,10 @@ export function DesktopContextMenu({
   const createTextFile = useFileSystemStore((state) => state.createTextFile);
   const deleteNodes = useFileSystemStore((state) => state.deleteNodes);
   const emptyRecycleBin = useFileSystemStore((state) => state.emptyRecycleBin);
+
+  const canPaste = useCanPasteFiles('desktop');
+  const setFileClipboard = useFileSystemStore((state) => state.setFileClipboard);
+  const pasteFiles = useFileSystemStore((state) => state.pasteFiles);
 
   const [openSubmenu, setOpenSubmenu] = useState<SubmenuKey>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -202,18 +207,24 @@ export function DesktopContextMenu({
 
         <div className={dividerClass} />
 
-        <div role="menuitem" aria-disabled="true" className={disabledRowClass}>
-          <div className="flex items-center">
-            <span className={gutterClass} />
-            <span>Cut</span>
-          </div>
-        </div>
-        <div role="menuitem" aria-disabled="true" className={disabledRowClass}>
-          <div className="flex items-center">
-            <span className={gutterClass} />
-            <span>Copy</span>
-          </div>
-        </div>
+        {(['cut', 'copy'] as FileClipboardMode[]).map((mode) => (
+          <button
+            key={mode}
+            type="button"
+            role="menuitem"
+            disabled={!(isDeletableNode)}
+            className={isDeletableNode ? `${rowClass} w-full` : `${disabledRowClass} w-full`}
+            onClick={() => {
+              setFileClipboard(mode, selectedIds.includes(targetItem.id) ? selectedIds : [targetItem.id]);
+              setContextMenuPos(null);
+            }}
+          >
+            <div className="flex items-center">
+              <span className={gutterClass} />
+              <span>{mode === 'cut' ? 'Cut' : 'Copy'}</span>
+            </div>
+          </button>
+        ))}
 
         <div className={dividerClass} />
 
@@ -419,17 +430,22 @@ export function DesktopContextMenu({
       <div className={dividerClass} />
 
       {/* Paste & Paste shortcut */}
-      <div
+      <button
+        type="button"
         role="menuitem"
-        aria-disabled="true"
+        disabled={!canPaste}
         onMouseEnter={() => setOpenSubmenu(null)}
-        className={disabledRowClass}
+        className={canPaste ? `${rowClass} w-full` : `${disabledRowClass} w-full`}
+        onClick={() => {
+          pasteFiles('desktop');
+          setContextMenuPos(null);
+        }}
       >
         <div className="flex items-center">
           <span className={gutterClass} />
           <span>Paste</span>
         </div>
-      </div>
+      </button>
 
       <div
         role="menuitem"

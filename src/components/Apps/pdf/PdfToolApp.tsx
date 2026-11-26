@@ -10,6 +10,7 @@ import {
   type FormEdit, type FormField, type PdfInput, type PdfOutput, type TextMark, type WatermarkOptions,
 } from './pdfOperations';
 import type { CompressionReply } from './compressPdf.worker';
+import { notify } from '../../../store/useNotificationStore';
 import './pdfTool.css';
 
 const tools = [
@@ -298,8 +299,19 @@ export default function PdfToolApp() {
       }
       setOutputs(result);
       showOutput(0);
+      notify({
+        source: 'PDF Tool',
+        title: result.length === 1 ? 'PDF ready' : `${result.length} PDFs ready`,
+        message: result.length === 1 ? result[0].name : `Processed ${input.name}.`,
+        kind: 'success',
+        target: { appId: 'pdf-tool' },
+      });
     } catch (reason) {
-      if (request === jobId.current) setError(reason instanceof Error ? reason.message : 'The PDF operation failed.');
+      if (request === jobId.current) {
+        const message = reason instanceof Error ? reason.message : 'The PDF operation failed.';
+        setError(message);
+        notify({ source: 'PDF Tool', title: 'PDF processing failed', message, kind: 'error', target: { appId: 'pdf-tool' } });
+      }
     } finally {
       if (request === jobId.current) setBusy(null);
     }

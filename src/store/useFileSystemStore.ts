@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import type { FsNode, FsNodeKind } from '../db/types';
 import {
   DEFAULT_IDB_QUOTA_BYTES,
-  deleteMediaBlob,
   estimateStorageStats,
   loadOrInitFileSystemNodes,
   measureNodesBytes,
@@ -188,8 +187,45 @@ function getUniqueNodeName(
   return `${baseName} (${index})${extension}`;
 }
 
+export type FileClipboardMode = 'cut' | 'copy';
+
+interface FileClipboard {
+  mode: FileClipboardMode;
+  ids: string[];
+}
+
+function ancestorIds(nodes: Record<string, FsNode>, id: string): Set<string> {
+  const ids = new Set<string>();
+  let node: FsNode | undefined = nodes[id];
+  while (node && !ids.has(node.id)) {
+    ids.add(node.id);
+    node = node.parentId ? nodes[node.parentId] : undefined;
+  }
+  return ids;
+}
+
+function getPasteSources(
+  nodes: Record<string, FsNode>,
+  clipboard: FileClipboard | null,
+  parentId: string,
+): FsNode[] {
+  const parent = nodes[parentId];
+  if (!clipboard || (parent?.kind !== 'folder' && parent?.kind !== 'drive')) return [];
+
+  const destinationAncestors = ancestorIds(nodes, parentId);
+  if (destinationAncestors.has('recycle-bin')) return [];
+  const sources = clipboard.ids
+    .map((id) => nodes[id])
+    .filter((node) => node && !ancestorIds(nodes, node.id).has('recycle-bin'));
+  if (sources.some((node) => destinationAncestors.has(node.id))) return [];
+  return sources.filter((node) => clipboard.mode === 'copy' || node.parentId !== parentId);
+}
+
 interface FileSystemState {
   nodes: Record<string, FsNode>;
+  clipboard: FileClipboard | null;
+  setFileClipboard: (mode: FileClipboardMode, ids: string[]) => boolean;
+  pasteFiles: (parentId: string) => boolean;
   isHydrated: boolean;
   storageUsedBytes: number;
   storageQuotaBytes: number;
@@ -215,25 +251,98 @@ interface FileSystemState {
 
 let hasUserMutated = false;
 let hydratePromise: Promise<void> | null = null;
+let fileSystemWrite = Promise.resolve();
+
+export function waitForFileSystemWrite(): Promise<void> {
+  return fileSystemWrite;
+}
 
 export const useFileSystemStore = create<FileSystemState>((set, get) => {
-  const persistNodes = (nextNodes: Record<string, FsNode>) => {
+  const persistNodes = (nextNodes: Record<string, FsNode>, removedIds?: Iterable<string>) => {
     hasUserMutated = true;
-    void saveAllFileSystemNodes(nextNodes).then(async () => {
+    // Copies share immutable media blobs until the last file referencing one is removed.
+    const remainingBlobs = removedIds && new Set(Object.values(nextNodes).map((node) => node.blobId));
+    const unusedBlobs = new Set<string>();
+    if (removedIds && remainingBlobs) {
+      const previousNodes = get().nodes;
+      for (const id of removedIds) {
+        const blobId = previousNodes[id]?.blobId;
+        if (blobId && !remainingBlobs.has(blobId)) unusedBlobs.add(blobId);
+      }
+    }
+    fileSystemWrite = saveAllFileSystemNodes(nextNodes, [...unusedBlobs]);
+    void fileSystemWrite.then(async () => {
       const stats = await estimateStorageStats(get().nodes);
       set({
         storageUsedBytes: stats.usedBytes,
         storageQuotaBytes: stats.quotaBytes,
       });
-    });
+    }).catch(() => undefined);
     return measureNodesBytes(nextNodes);
   };
 
   return {
     nodes: DEFAULT_NODES,
+    clipboard: null,
     isHydrated: false,
     storageUsedBytes: measureNodesBytes(DEFAULT_NODES),
     storageQuotaBytes: DEFAULT_IDB_QUOTA_BYTES,
+
+    setFileClipboard: (mode, ids) => {
+      const { nodes } = get();
+      const selected = new Set(ids.filter((id) => {
+        const node = nodes[id];
+        return node && !node.isSystem && (node.kind === 'file' || node.kind === 'folder') &&
+          !ancestorIds(nodes, id).has('recycle-bin');
+      }));
+      const roots = [...selected].filter((id) =>
+        ![...ancestorIds(nodes, id)].some((ancestor) => ancestor !== id && selected.has(ancestor)),
+      );
+      if (!roots.length) return false;
+      set({ clipboard: { mode, ids: roots } });
+      return true;
+    },
+
+    pasteFiles: (parentId) => {
+      const { nodes, clipboard } = get();
+      const sources = getPasteSources(nodes, clipboard, parentId);
+      if (!clipboard || !sources.length) return false;
+
+      const nextNodes = { ...nodes };
+      const timestamp = Date.now();
+      const children = new Map<string, FsNode[]>();
+      if (clipboard.mode === 'copy') {
+        for (const node of Object.values(nodes)) {
+          if (!node.parentId) continue;
+          const siblings = children.get(node.parentId) ?? [];
+          siblings.push(node);
+          children.set(node.parentId, siblings);
+        }
+      }
+
+      function copyTree(node: FsNode, destination: string, name: string) {
+        const id = `copy-${crypto.getRandomValues(new Uint32Array(4)).join('-')}`;
+        nextNodes[id] = {
+          ...node, id, name, parentId: destination, createdAt: timestamp, originalParentId: undefined,
+        };
+        for (const child of children.get(node.id) ?? []) copyTree(child, id, child.name);
+      }
+
+      for (const node of sources) {
+        const dot = node.kind === 'file' ? node.name.lastIndexOf('.') : -1;
+        const base = dot > 0 ? node.name.slice(0, dot) : node.name;
+        const extension = dot > 0 ? node.name.slice(dot) : '';
+        const name = getUniqueNodeName(nextNodes, parentId, base, extension);
+        if (clipboard.mode === 'copy') {
+          copyTree(node, parentId, name);
+        } else {
+          nextNodes[node.id] = { ...node, name, parentId };
+        }
+      }
+      const storageUsedBytes = persistNodes(nextNodes);
+      set({ nodes: nextNodes, storageUsedBytes, clipboard: clipboard.mode === 'cut' ? null : clipboard });
+      return true;
+    },
 
     hydrate: () => {
       if (hydratePromise) return hydratePromise;
@@ -292,7 +401,6 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
       const dotIdx = trimmed.lastIndexOf('.');
       const baseName = dotIdx > 0 ? trimmed.slice(0, dotIdx) : trimmed;
       const ext = dotIdx > 0 ? trimmed.slice(dotIdx) : '';
-      const name = getUniqueNodeName(state.nodes, parentId, baseName, ext);
       const id = `media-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       const blobId = id;
       const timestamp = Date.now();
@@ -300,6 +408,7 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
       await saveMediaBlob(blobId, blob);
 
       const latest = get();
+      const name = getUniqueNodeName(latest.nodes, parentId, baseName, ext);
       const nextNodes: Record<string, FsNode> = {
         ...latest.nodes,
         [id]: {
@@ -318,7 +427,9 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
       };
 
       const storageUsedBytes = persistNodes(nextNodes);
+      const persisted = waitForFileSystemWrite();
       set({ nodes: nextNodes, storageUsedBytes: Math.max(latest.storageUsedBytes, storageUsedBytes) });
+      await persisted;
       return id;
     },
 
@@ -417,6 +528,7 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
     deleteNodes: (ids) => {
       set((state) => {
         const nextNodes = { ...state.nodes };
+        const removedIds = new Set<string>();
         const collectDescendants = (rootId: string): string[] => {
           const result = [rootId];
           Object.values(nextNodes).forEach((node) => {
@@ -434,10 +546,7 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
           changed = true;
           if (target.parentId === 'recycle-bin') {
             for (const descId of collectDescendants(id)) {
-              const desc = nextNodes[descId];
-              if (desc?.blobId) {
-                void deleteMediaBlob(desc.blobId);
-              }
+              removedIds.add(descId);
               delete nextNodes[descId];
             }
           } else {
@@ -451,7 +560,7 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
         }
 
         if (!changed) return state;
-        const storageUsedBytes = persistNodes(nextNodes);
+        const storageUsedBytes = persistNodes(nextNodes, removedIds);
         return { nodes: nextNodes, storageUsedBytes };
       });
     },
@@ -496,13 +605,9 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
         });
         if (toRemove.size === 0) return state;
         toRemove.forEach((id) => {
-          const node = nextNodes[id];
-          if (node?.blobId) {
-            void deleteMediaBlob(node.blobId);
-          }
           delete nextNodes[id];
         });
-        const storageUsedBytes = persistNodes(nextNodes);
+        const storageUsedBytes = persistNodes(nextNodes, toRemove);
         return { nodes: nextNodes, storageUsedBytes };
       });
     },
@@ -516,6 +621,10 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
     },
   };
 });
+
+export function useCanPasteFiles(parentId: string): boolean {
+  return useFileSystemStore((state) => getPasteSources(state.nodes, state.clipboard, parentId).length > 0);
+}
 
 if (typeof window !== 'undefined') {
   void useFileSystemStore.getState().hydrate();

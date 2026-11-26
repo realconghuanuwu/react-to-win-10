@@ -1,3 +1,4 @@
+import { useCanPasteFiles, useFileSystemStore, type FileClipboardMode } from '../../store/useFileSystemStore';
 import { useEffect, useRef, useState } from 'react';
 import type { FsNode } from '../../store/useFileSystemStore';
 
@@ -63,6 +64,7 @@ interface ExplorerContextMenuProps {
   currentFolderId: string;
   canCreate: boolean;
   targetNode: FsNode | null;
+  selectedIds: string[];
   viewMode: ExplorerViewMode;
   sortField: ExplorerSortField;
   sortOrder: ExplorerSortOrder;
@@ -92,6 +94,7 @@ export function ExplorerContextMenu({
   currentFolderId,
   canCreate,
   targetNode,
+  selectedIds,
   viewMode,
   sortField,
   sortOrder,
@@ -112,6 +115,10 @@ export function ExplorerContextMenu({
   onShowProperties,
   onClose,
 }: ExplorerContextMenuProps) {
+  const canPaste = useCanPasteFiles(currentFolderId);
+  const setFileClipboard = useFileSystemStore((state) => state.setFileClipboard);
+  const pasteFiles = useFileSystemStore((state) => state.pasteFiles);
+
   const [openSubmenu, setOpenSubmenu] = useState<SubmenuKey>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
@@ -199,18 +206,24 @@ export function ExplorerContextMenu({
         ) : (
           <>
             <div className={dividerClass} />
-            <div role="menuitem" aria-disabled="true" className={disabledRowClass}>
-              <div className="flex items-center">
-                <span className={gutterClass} />
-                <span>Cut</span>
-              </div>
-            </div>
-            <div role="menuitem" aria-disabled="true" className={disabledRowClass}>
-              <div className="flex items-center">
-                <span className={gutterClass} />
-                <span>Copy</span>
-              </div>
-            </div>
+            {(['cut', 'copy'] as FileClipboardMode[]).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                role="menuitem"
+                disabled={!(isMutable)}
+                className={isMutable ? `${rowClass} w-full` : `${disabledRowClass} w-full`}
+                onClick={() => {
+                  setFileClipboard(mode, selectedIds.includes(targetNode.id) ? selectedIds : [targetNode.id]);
+                  onClose();
+                }}
+              >
+                <div className="flex items-center">
+                  <span className={gutterClass} />
+                  <span>{mode === 'cut' ? 'Cut' : 'Copy'}</span>
+                </div>
+              </button>
+            ))}
             <div className={dividerClass} />
             <button
               type="button"
@@ -494,17 +507,22 @@ export function ExplorerContextMenu({
       <div className={dividerClass} />
 
       {/* Paste / Paste shortcut / Undo */}
-      <div
+      <button
+        type="button"
         role="menuitem"
-        aria-disabled="true"
+        disabled={!canPaste}
         onMouseEnter={() => setOpenSubmenu(null)}
-        className={disabledRowClass}
+        className={canPaste ? `${rowClass} w-full` : `${disabledRowClass} w-full`}
+        onClick={() => {
+          pasteFiles(currentFolderId);
+          onClose();
+        }}
       >
         <div className="flex items-center">
           <span className={gutterClass} />
           <span>Paste</span>
         </div>
-      </div>
+      </button>
 
       <div
         role="menuitem"
