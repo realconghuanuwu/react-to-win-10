@@ -1,10 +1,9 @@
 import { useRef, type PointerEvent as ReactPointerEvent } from 'react';
 import { useDesktopStore, type AppWindow } from '../../store/useDesktopStore';
+import { CalculatorApp } from '../Apps/CalculatorApp';
 
 type ResizeDirection = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
-const MIN_WIDTH = 320;
-const MIN_HEIGHT = 220;
 const TITLEBAR_HEIGHT = 32;
 const TASKBAR_HEIGHT = 40;
 
@@ -32,6 +31,7 @@ export function WindowFrame({ win }: WindowFrameProps) {
   const updateWindowBounds = useDesktopStore((state) => state.updateWindowBounds);
 
   const isActive = activeAppId === win.id;
+  const isDarkApp = win.id === 'calculator';
   const dragSessionRef = useRef<boolean>(false);
 
   const handleTitleBarPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -134,18 +134,18 @@ export function WindowFrame({ win }: WindowFrameProps) {
       let nextHeight = startHeight;
 
       if (dir.includes('e')) {
-        nextWidth = Math.max(MIN_WIDTH, Math.min(startWidth + dx, desktopWidth - startX));
+        nextWidth = Math.max(win.minWidth, Math.min(startWidth + dx, desktopWidth - startX));
       }
       if (dir.includes('s')) {
-        nextHeight = Math.max(MIN_HEIGHT, Math.min(startHeight + dy, desktopHeight - startY));
+        nextHeight = Math.max(win.minHeight, Math.min(startHeight + dy, desktopHeight - startY));
       }
       if (dir.includes('w')) {
-        const clampedDx = Math.max(-startX, Math.min(dx, startWidth - MIN_WIDTH));
+        const clampedDx = Math.max(-startX, Math.min(dx, startWidth - win.minWidth));
         nextX = startX + clampedDx;
         nextWidth = startWidth - clampedDx;
       }
       if (dir.includes('n')) {
-        const clampedDy = Math.max(-startY, Math.min(dy, startHeight - MIN_HEIGHT));
+        const clampedDy = Math.max(-startY, Math.min(dy, startHeight - win.minHeight));
         nextY = startY + clampedDy;
         nextHeight = startHeight - clampedDy;
       }
@@ -185,6 +185,10 @@ export function WindowFrame({ win }: WindowFrameProps) {
         zIndex: win.zIndex,
       };
 
+  const captionHoverClass = isDarkApp
+    ? 'hover:bg-white/10 active:bg-white/15'
+    : 'hover:bg-[#e5e5e5] active:bg-[#cccccc]';
+
   return (
     <section
       role="dialog"
@@ -192,7 +196,8 @@ export function WindowFrame({ win }: WindowFrameProps) {
       onPointerDown={() => focusWindow(win.id)}
       style={frameStyle}
       className={[
-        'pointer-events-auto absolute flex-col bg-[#e6e6e6] select-none',
+        'pointer-events-auto absolute flex-col select-none',
+        isDarkApp ? 'bg-[#202020]' : 'bg-[#e6e6e6]',
         win.isMaximized
           ? 'border-0 shadow-none'
           : isActive
@@ -215,11 +220,27 @@ export function WindowFrame({ win }: WindowFrameProps) {
         onPointerDown={handleTitleBarPointerDown}
         onDoubleClick={() => toggleMaximizeWindow(win.id)}
         className={[
-          'flex items-center justify-between h-[32px] shrink-0 pl-3 pr-0 bg-white',
-          isActive ? 'text-[#1f1f1f]' : 'text-[#767676]',
+          'flex items-center justify-between h-[32px] shrink-0 pl-3 pr-0',
+          isDarkApp
+            ? isActive
+              ? 'bg-[#202020] text-white'
+              : 'bg-[#202020] text-[#8a8a8a]'
+            : isActive
+              ? 'bg-white text-[#1f1f1f]'
+              : 'bg-white text-[#767676]',
         ].join(' ')}
       >
-        <span className="text-[12px] font-normal truncate pr-2">{win.title}</span>
+        <div className="flex items-center gap-2 min-w-0 pr-2">
+          {isDarkApp && (
+            <img
+              src={win.icon}
+              alt=""
+              draggable={false}
+              className="w-4 h-4 object-contain shrink-0 pointer-events-none"
+            />
+          )}
+          <span className="text-[12px] font-normal truncate">{win.title}</span>
+        </div>
 
         <div className="flex items-center h-full shrink-0">
           <button
@@ -230,7 +251,7 @@ export function WindowFrame({ win }: WindowFrameProps) {
               e.stopPropagation();
               minimizeWindow(win.id);
             }}
-            className="flex items-center justify-center w-[46px] h-full hover:bg-[#e5e5e5] active:bg-[#cccccc] transition-colors cursor-default"
+            className={`flex items-center justify-center w-[46px] h-full transition-colors cursor-default ${captionHoverClass}`}
           >
             <svg viewBox="0 0 10 10" width="10" height="10" stroke="currentColor" strokeWidth="1" fill="none" aria-hidden="true">
               <line x1="0" y1="5" x2="10" y2="5" />
@@ -245,7 +266,7 @@ export function WindowFrame({ win }: WindowFrameProps) {
               e.stopPropagation();
               toggleMaximizeWindow(win.id);
             }}
-            className="flex items-center justify-center w-[46px] h-full hover:bg-[#e5e5e5] active:bg-[#cccccc] transition-colors cursor-default"
+            className={`flex items-center justify-center w-[46px] h-full transition-colors cursor-default ${captionHoverClass}`}
           >
             {win.isMaximized ? (
               <svg viewBox="0 0 10 10" width="10" height="10" stroke="currentColor" strokeWidth="1" fill="none" aria-hidden="true">
@@ -277,17 +298,21 @@ export function WindowFrame({ win }: WindowFrameProps) {
         </div>
       </header>
 
-      <div className="flex-1 flex flex-col items-center justify-center bg-[#e6e6e6] p-6 overflow-hidden">
-        <img
-          src={win.icon}
-          alt={win.title}
-          draggable={false}
-          className="w-20 h-20 object-contain mb-4 pointer-events-none"
-        />
-        <p className="text-[19px] font-normal text-[#2b2b2b] tracking-tight text-center">
-          {win.title} coming soon
-        </p>
-      </div>
+      {win.id === 'calculator' ? (
+        <CalculatorApp isActive={isActive} />
+      ) : (
+        <div className="flex-1 flex flex-col items-center justify-center bg-[#e6e6e6] p-6 overflow-hidden">
+          <img
+            src={win.icon}
+            alt={win.title}
+            draggable={false}
+            className="w-20 h-20 object-contain mb-4 pointer-events-none"
+          />
+          <p className="text-[19px] font-normal text-[#2b2b2b] tracking-tight text-center">
+            {win.title} coming soon
+          </p>
+        </div>
+      )}
     </section>
   );
 }

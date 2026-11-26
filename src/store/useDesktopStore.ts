@@ -17,6 +17,8 @@ export interface AppWindow extends WindowBounds {
   id: string;
   title: string;
   icon: string;
+  minWidth: number;
+  minHeight: number;
   zIndex: number;
   isMinimized: boolean;
   isMaximized: boolean;
@@ -64,15 +66,21 @@ function getTopVisibleWindowId(windows: AppWindow[]): string | null {
   return visible.reduce((top, current) => (current.zIndex > top.zIndex ? current : top)).id;
 }
 
-function createInitialBounds(existingCount: number): WindowBounds {
+function createInitialBounds(appId: string, existingCount: number): { bounds: WindowBounds; minWidth: number; minHeight: number } {
   const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
   const vh = typeof window !== 'undefined' ? window.innerHeight - TASKBAR_HEIGHT : 680;
-  const width = Math.min(DEFAULT_WIDTH, Math.max(340, vw - 48));
-  const height = Math.min(DEFAULT_HEIGHT, Math.max(240, vh - 48));
+  const isCalc = appId === 'calculator';
+  const targetWidth = isCalc ? 340 : DEFAULT_WIDTH;
+  const targetHeight = isCalc ? 540 : DEFAULT_HEIGHT;
+  const minWidth = isCalc ? 320 : 320;
+  const minHeight = isCalc ? 480 : 220;
+
+  const width = Math.min(targetWidth, Math.max(minWidth, vw - 48));
+  const height = Math.min(targetHeight, Math.max(minHeight, vh - 48));
   const offset = (existingCount % 6) * 28;
   const x = Math.max(16, Math.min(Math.round((vw - width) / 2) + offset, vw - width - 16));
   const y = Math.max(16, Math.min(Math.round((vh - height) / 2) + offset, vh - height - 16));
-  return { x, y, width, height };
+  return { bounds: { x, y, width, height }, minWidth, minHeight };
 }
 
 export const useDesktopStore = create<DesktopState>((set) => ({
@@ -149,12 +157,14 @@ export const useDesktopStore = create<DesktopState>((set) => ({
         };
       }
 
-      const bounds = createInitialBounds(state.windows.length);
+      const { bounds, minWidth, minHeight } = createInitialBounds(app.id, state.windows.length);
       const newWindow: AppWindow = {
         id: app.id,
         title: app.name,
         icon: app.icon,
         ...bounds,
+        minWidth,
+        minHeight,
         zIndex: nextZ,
         isMinimized: false,
         isMaximized: false,
@@ -175,7 +185,7 @@ export const useDesktopStore = create<DesktopState>((set) => ({
         const app = state.apps.find((item) => item.id === id);
         if (!app) return state;
         const nextZ = state.topZIndex + 1;
-        const bounds = createInitialBounds(state.windows.length);
+        const { bounds, minWidth, minHeight } = createInitialBounds(app.id, state.windows.length);
         return {
           windows: [
             ...state.windows,
@@ -184,6 +194,8 @@ export const useDesktopStore = create<DesktopState>((set) => ({
               title: app.name,
               icon: app.icon,
               ...bounds,
+              minWidth,
+              minHeight,
               zIndex: nextZ,
               isMinimized: false,
               isMaximized: false,
