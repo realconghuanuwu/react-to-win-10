@@ -15,7 +15,9 @@
     "@univerjs/preset-docs-core": "^1.6.2",
     "@univerjs/preset-sheets-core": "^1.6.2",
     "@univerjs/presets": "^1.6.2",
+    "@webcontainer/api": "1.6.4",
     "idb": "^8.0.4",
+    "monaco-editor": "0.58.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "zustand": "^5.1.0"

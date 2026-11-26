@@ -999,6 +999,7 @@ export function ChromeApp({ windowId }: ChromeAppProps) {
                 </div>
               ) : (
                 <iframe
+                  {...{ credentialless: window.crossOriginIsolated }}
                   key={`${tab.id}-${tab.reloadNonce}-${tabShouldUseProxy ? 'proxy' : 'direct'}`}
                   ref={(el) => {
                     iframeRefs.current[tab.id] = el;

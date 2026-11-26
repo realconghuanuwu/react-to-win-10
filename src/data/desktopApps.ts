@@ -76,6 +76,12 @@ export const DESKTOP_APPS: DesktopAppItem[] = [
     showOnDesktop: false,
   },
   {
+    id: 'code-studio',
+    name: 'Code Studio',
+    icon: '/assets/icons/code-studio.svg',
+    showOnDesktop: true,
+  },
+  {
     id: 'paint',
     name: 'Paint',
     icon: '/assets/icons/paint.png',

@@ -253,10 +253,11 @@ function createInitialBounds(
   const isSettings = appId === 'settings';
   const isChrome = appId === 'chrome';
   const isOffice = appId === 'word' || appId === 'excel';
-  const targetWidth = isCalc ? 340 : isOffice ? 1120 : isChrome ? 1040 : isExplorer ? 940 : isSettings ? 840 : DEFAULT_WIDTH;
-  const targetHeight = isCalc ? 540 : isOffice ? 700 : isChrome ? 680 : isExplorer ? 600 : isSettings ? 580 : DEFAULT_HEIGHT;
+  const isStudio = appId === 'code-studio';
+  const targetWidth = isCalc ? 340 : isOffice || isStudio ? 1120 : isChrome ? 1040 : isExplorer ? 940 : isSettings ? 840 : DEFAULT_WIDTH;
+  const targetHeight = isCalc ? 540 : isOffice || isStudio ? 700 : isChrome ? 680 : isExplorer ? 600 : isSettings ? 580 : DEFAULT_HEIGHT;
   const minWidth = isCalc ? 320 : isOffice ? 680 : isChrome ? 520 : isExplorer ? 620 : isSettings ? 580 : 320;
-  const minHeight = isCalc ? 480 : isOffice ? 460 : isChrome ? 380 : isExplorer ? 400 : isSettings ? 420 : 220;
+  const minHeight = isCalc ? 480 : isOffice ? 460 : isStudio || isChrome ? 380 : isExplorer ? 400 : isSettings ? 420 : 220;
 
   const width = Math.min(targetWidth, Math.max(minWidth, vw - 48));
   const height = Math.min(targetHeight, Math.max(minHeight, vh - 48));

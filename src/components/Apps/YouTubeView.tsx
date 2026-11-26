@@ -282,6 +282,7 @@ export function YouTubeView({
             <div className="flex-1 min-w-0 flex flex-col">
               <div className="w-full aspect-video rounded-xl overflow-hidden bg-black">
                 <iframe
+                  {...{ credentialless: window.crossOriginIsolated }}
                   key={videoId}
                   ref={playerIframeRef}
                   src={`https://www.youtube.com/embed/${encodeURIComponent(videoId)}?autoplay=1&enablejsapi=1`}

@@ -16,6 +16,7 @@ import { YouTubeDownloaderApp } from '../Apps/YouTubeDownloaderApp';
 const OfficeApp = lazy(() =>
   import('../Apps/OfficeApp').then((mod) => ({ default: mod.OfficeApp })),
 );
+const CodeStudioApp = lazy(() => import('../Apps/CodeStudioApp'));
 
 type ResizeDirection = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
@@ -51,6 +52,7 @@ export function WindowFrame({ win }: WindowFrameProps) {
     win.id === 'explorer' || win.id === 'this-pc' || win.id === 'recycle-bin';
   const isDarkApp =
     win.id === 'calculator' ||
+    win.id === 'code-studio' ||
     isExplorerApp ||
     win.id === 'settings' ||
     win.id === 'yt-downloader' ||
@@ -336,6 +338,10 @@ export function WindowFrame({ win }: WindowFrameProps) {
         <ChromeApp windowId={win.id} />
       ) : win.id === 'notepad' ? (
         <NotepadApp windowId={win.id} />
+      ) : win.id === 'code-studio' ? (
+        <Suspense fallback={<div className="grid flex-1 place-items-center text-sm text-white">Loading editor…</div>}>
+          <CodeStudioApp />
+        </Suspense>
       ) : win.id === 'word' || win.id === 'excel' ? (
         <Suspense
           fallback={
