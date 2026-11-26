@@ -2973,7 +2973,7 @@ export function PaintApp({ windowId }: PaintAppProps) {
               </button>
             </div>
             <div className="p-4 flex gap-3 items-start">
-              <img src="/assets/icons/paint.png" alt="" className="w-12 h-12 object-contain shrink-0" />
+              <img src="/assets/icons/paint.svg" alt="" className="w-12 h-12 object-contain shrink-0" />
               <div className="space-y-1.5">
                 <div className="font-semibold text-[13px]">Windows 10 Paint</div>
                 <p className="text-[#444] leading-relaxed">

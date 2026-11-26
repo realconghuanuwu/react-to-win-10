@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from 'react';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { useDesktopStore } from '../../store/useDesktopStore';
 import {
@@ -39,9 +39,17 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
   const setFileClipboard = useFileSystemStore((state) => state.setFileClipboard);
   const pasteFiles = useFileSystemStore((state) => state.pasteFiles);
   const deleteNodes = useFileSystemStore((state) => state.deleteNodes);
+  const deleteNodesPermanently = useFileSystemStore((state) => state.deleteNodesPermanently);
+  const moveNodes = useFileSystemStore((state) => state.moveNodes);
+  const undoFs = useFileSystemStore((state) => state.undo);
+  const importHostFiles = useFileSystemStore((state) => state.importHostFiles);
   const restoreNodes = useFileSystemStore((state) => state.restoreNodes);
   const emptyRecycleBin = useFileSystemStore((state) => state.emptyRecycleBin);
   const refreshStorageStats = useFileSystemStore((state) => state.refreshStorageStats);
+
+  const [draggingNodeIds, setDraggingNodeIds] = useState<string[]>([]);
+  const [dropTargetNodeId, setDropTargetNodeId] = useState<string | null>(null);
+  const [isHostDropTarget, setIsHostDropTarget] = useState(false);
 
   const activeAppId = useDesktopStore((state) => state.activeAppId);
   const setWindowTitle = useDesktopStore((state) => state.setWindowTitle);
@@ -405,6 +413,56 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
     handleDeleteSelected();
   }, hotkeyOptions, [currentFolderId, selectedMutableIds.length, handleDeleteSelected]);
 
+  useHotkeys('shift+delete', (event) => {
+    if (event.repeat || !selectedMutableIds.length) return;
+    event.preventDefault();
+    deleteNodesPermanently(selectedMutableIds);
+    setSelectedIds([]);
+  }, hotkeyOptions, [selectedMutableIds, deleteNodesPermanently]);
+
+  useHotkeys('f2', (event) => {
+    if (visibleSelectedIds.length !== 1) return;
+    event.preventDefault();
+    handleStartRename(visibleSelectedIds[0]);
+  }, hotkeyOptions, [visibleSelectedIds]);
+
+  useHotkeys('f5', (event) => {
+    event.preventDefault();
+    void refreshStorageStats();
+  }, hotkeyOptions, [refreshStorageStats]);
+
+  useHotkeys('ctrl+shift+n, meta+shift+n', (event) => {
+    if (!canCreateFolder) return;
+    event.preventDefault();
+    handleCreateNewFolder();
+  }, hotkeyOptions, [canCreateFolder, currentFolderId]);
+
+  useHotkeys('ctrl+z, meta+z', (event) => {
+    event.preventDefault();
+    undoFs();
+  }, clipboardOptions, [undoFs]);
+
+  useHotkeys('enter', (event) => {
+    if (renamingId || visibleSelectedIds.length !== 1) return;
+    const node = nodes[visibleSelectedIds[0]];
+    if (!node) return;
+    event.preventDefault();
+    handleOpenNode(node);
+  }, hotkeyOptions, [renamingId, visibleSelectedIds, nodes]);
+
+  useHotkeys('left, up, right, down', (event) => {
+    if (renamingId || visibleIds.length === 0) return;
+    event.preventDefault();
+    const curId = visibleSelectedIds[visibleSelectedIds.length - 1];
+    const curIdx = curId ? visibleIds.indexOf(curId) : -1;
+    const step = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1;
+    const nextIdx =
+      curIdx < 0 ? 0 : Math.max(0, Math.min(visibleIds.length - 1, curIdx + step));
+    const nextId = visibleIds[nextIdx];
+    selectionAnchor.current = nextId;
+    setSelectedIds([nextId]);
+  }, hotkeyOptions, [renamingId, visibleIds, visibleSelectedIds]);
+
   const handleStartRename = (id?: string) => {
     const targetId = id ?? selectedMutableIds[0];
     if (!targetId) return;
@@ -444,10 +502,32 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
           role="treeitem"
           aria-expanded={hasChildren ? isExpanded : undefined}
           onClick={() => navigateTo(nodeId)}
+          onDragOver={(e) => {
+            if (draggingNodeIds.length > 0 && !draggingNodeIds.includes(nodeId)) {
+              e.preventDefault();
+              setDropTargetNodeId(nodeId);
+            }
+          }}
+          onDragLeave={() => {
+            if (dropTargetNodeId === nodeId) setDropTargetNodeId(null);
+          }}
+          onDrop={(e) => {
+            if (draggingNodeIds.length > 0 && !draggingNodeIds.includes(nodeId)) {
+              e.preventDefault();
+              moveNodes(draggingNodeIds, nodeId);
+              setDraggingNodeIds([]);
+              setDropTargetNodeId(null);
+              setSelectedIds([]);
+            }
+          }}
           style={{ paddingLeft: `${depth * 14 + 6}px` }}
           className={[
             'flex items-center gap-1.5 h-[24px] pr-2 text-[12px] cursor-default transition-colors',
-            isCurrent ? 'bg-[#333333] text-white' : 'text-[#e0e0e0] hover:bg-[#2a2a2a]',
+            dropTargetNodeId === nodeId
+              ? 'bg-[#0078d7]/45 text-white'
+              : isCurrent
+                ? 'bg-[#333333] text-white'
+                : 'text-[#e0e0e0] hover:bg-[#2a2a2a]',
           ].join(' ')}
         >
           <button
@@ -524,6 +604,45 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
         aria-pressed={isSelected}
         role="button"
         tabIndex={0}
+        draggable={!item.isSystem && currentFolderId !== 'recycle-bin'}
+        onDragStart={(e) => {
+          if (item.isSystem) return;
+          const ids = isSelected ? selectedMutableIds : [item.id];
+          setDraggingNodeIds(ids);
+          e.dataTransfer.effectAllowed = 'move';
+        }}
+        onDragEnd={() => {
+          setDraggingNodeIds([]);
+          setDropTargetNodeId(null);
+        }}
+        onDragOver={(e) => {
+          if (
+            (item.kind === 'folder' || item.kind === 'drive') &&
+            draggingNodeIds.length > 0 &&
+            !draggingNodeIds.includes(item.id)
+          ) {
+            e.preventDefault();
+            e.stopPropagation();
+            setDropTargetNodeId(item.id);
+          }
+        }}
+        onDragLeave={() => {
+          if (dropTargetNodeId === item.id) setDropTargetNodeId(null);
+        }}
+        onDrop={(e) => {
+          if (
+            (item.kind === 'folder' || item.kind === 'drive') &&
+            draggingNodeIds.length > 0 &&
+            !draggingNodeIds.includes(item.id)
+          ) {
+            e.preventDefault();
+            e.stopPropagation();
+            moveNodes(draggingNodeIds, item.id);
+            setDraggingNodeIds([]);
+            setDropTargetNodeId(null);
+            setSelectedIds([]);
+          }
+        }}
         onClick={(e) => {
           e.stopPropagation();
           selectItem(item.id, e);
@@ -537,9 +656,11 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
           'flex border transition-colors cursor-default',
           containerLayoutClass,
           clipboard?.mode === 'cut' && clipboard.ids.includes(item.id) ? 'opacity-50' : '',
-          isSelected
-            ? 'bg-[#363636] border-[#666666]'
-            : 'border-transparent hover:bg-[#2a2a2a]',
+          dropTargetNodeId === item.id
+            ? 'bg-[#0078d7]/40 border-[#66baff]'
+            : isSelected
+              ? 'bg-[#363636] border-[#666666]'
+              : 'border-transparent hover:bg-[#2a2a2a]',
         ].join(' ')}
       >
         <div className={`flex items-center ${isVerticalIcon ? 'flex-col' : 'gap-2'} min-w-0 flex-1`}>
@@ -886,7 +1007,21 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
         <section
           aria-label="Folder contents"
           onContextMenu={(e) => handlePaneContextMenu(e, null)}
-          className="win10-dark-scroll flex-1 bg-[#191919] overflow-y-auto p-4"
+          onDragOver={(e: DragEvent<HTMLElement>) => {
+            if (canCreateFolder && e.dataTransfer?.types.includes('Files')) {
+              e.preventDefault();
+              setIsHostDropTarget(true);
+            }
+          }}
+          onDragLeave={() => setIsHostDropTarget(false)}
+          onDrop={(e: DragEvent<HTMLElement>) => {
+            setIsHostDropTarget(false);
+            if (canCreateFolder && e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+              e.preventDefault();
+              void importHostFiles(currentFolderId, e.dataTransfer.files);
+            }
+          }}
+          className={`win10-dark-scroll relative flex-1 bg-[#191919] overflow-y-auto p-4 ${isHostDropTarget ? 'ring-2 ring-inset ring-[#66baff] bg-[#0078d7]/10' : ''}`}
         >
           {currentFolderId === 'this-pc' ? (
             <div className="space-y-5">

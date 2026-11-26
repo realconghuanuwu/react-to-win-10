@@ -1,27 +1,49 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { START_TILE_GROUPS, type DesktopAppItem } from '../../data/desktopApps';
-import { getTaskbarThickness, useDesktopStore } from '../../store/useDesktopStore';
+import { type DesktopAppItem } from '../../data/desktopApps';
+import { getTaskbarThickness, useDesktopStore, type TileSize } from '../../store/useDesktopStore';
 
 const RECENT_APP_IDS = ['calculator', 'explorer', 'store'];
 const ACCESSORIES_IDS = ['notepad', 'paint', 'snip'];
+
+interface StartItemContextMenu {
+  appId: string;
+  x: number;
+  y: number;
+  isTile: boolean;
+}
 
 export function StartMenu() {
   const isStartMenuOpen = useDesktopStore((state) => state.isStartMenuOpen);
   const apps = useDesktopStore((state) => state.apps);
   const taskbarSettings = useDesktopStore((state) => state.taskbarSettings);
+  const startMenuTileIds = useDesktopStore((state) => state.startMenuTileIds);
+  const tileSizes = useDesktopStore((state) => state.tileSizes);
   const openApp = useDesktopStore((state) => state.openApp);
   const closeStartMenu = useDesktopStore((state) => state.closeStartMenu);
-  const minimizeAll = useDesktopStore((state) => state.minimizeAll);
+  const setSearchOpen = useDesktopStore((state) => state.setSearchOpen);
+  const setLockScreenOpen = useDesktopStore((state) => state.setLockScreenOpen);
+  const setPowerState = useDesktopStore((state) => state.setPowerState);
+  const openSettingsTab = useDesktopStore((state) => state.openSettingsTab);
+  const pinToStart = useDesktopStore((state) => state.pinToStart);
+  const unpinFromStart = useDesktopStore((state) => state.unpinFromStart);
+  const setTileSize = useDesktopStore((state) => state.setTileSize);
+  const reorderStartTiles = useDesktopStore((state) => state.reorderStartTiles);
+  const togglePinToTaskbar = useDesktopStore((state) => state.togglePinToTaskbar);
 
   const [railExpanded, setRailExpanded] = useState(false);
   const [accessoriesOpen, setAccessoriesOpen] = useState(false);
   const [powerMenuOpen, setPowerMenuOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [itemMenu, setItemMenu] = useState<StartItemContextMenu | null>(null);
+  const [dragTileId, setDragTileId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!isStartMenuOpen) {
       setRailExpanded(false);
       setPowerMenuOpen(false);
+      setUserMenuOpen(false);
+      setItemMenu(null);
       return;
     }
 
@@ -35,7 +57,40 @@ export function StartMenu() {
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        if (itemMenu) {
+          setItemMenu(null);
+        } else {
+          closeStartMenu();
+        }
+        return;
+      }
+
+      // Keyboard navigation in All Apps list
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        const listButtons = Array.from(
+          menuRef.current?.querySelectorAll<HTMLButtonElement>('[data-start-nav="true"]') ?? [],
+        );
+        if (listButtons.length === 0) return;
+        e.preventDefault();
+        const activeIdx = listButtons.findIndex((b) => b === document.activeElement);
+        const nextIdx =
+          activeIdx < 0
+            ? 0
+            : (activeIdx + (e.key === 'ArrowDown' ? 1 : -1) + listButtons.length) % listButtons.length;
+        listButtons[nextIdx]?.focus();
+        return;
+      }
+
+      // Type-to-search when Start Menu is open
+      if (
+        e.key.length === 1 &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        !e.metaKey &&
+        !(document.activeElement instanceof HTMLInputElement)
+      ) {
         closeStartMenu();
+        setSearchOpen(true);
       }
     };
 
@@ -45,7 +100,7 @@ export function StartMenu() {
       window.removeEventListener('pointerdown', handlePointerDown);
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isStartMenuOpen, closeStartMenu]);
+  }, [isStartMenuOpen, itemMenu, closeStartMenu, setSearchOpen]);
 
   const appById = useMemo(() => {
     const map = new Map<string, DesktopAppItem>();
@@ -75,6 +130,14 @@ export function StartMenu() {
     [appById],
   );
 
+  const pinnedTileApps = useMemo(
+    () =>
+      startMenuTileIds
+        .map((id) => appById.get(id))
+        .filter((a): a is DesktopAppItem => Boolean(a)),
+    [startMenuTileIds, appById],
+  );
+
   if (!isStartMenuOpen) return null;
 
   const railBtnClass =
@@ -90,12 +153,25 @@ export function StartMenu() {
           ? { top: 0, right: thickness }
           : { bottom: thickness, left: 0 };
 
+  const openContextMenuForApp = (
+    appId: string,
+    clientX: number,
+    clientY: number,
+    isTile: boolean,
+  ) => {
+    const rect = menuRef.current?.getBoundingClientRect();
+    const x = rect ? Math.min(rect.width - 175, Math.max(8, clientX - rect.left)) : 120;
+    const y = rect ? Math.min(rect.height - 150, Math.max(8, clientY - rect.top)) : 120;
+    setItemMenu({ appId, x, y, isTile });
+  };
+
   return (
     <aside
       ref={menuRef}
       role="dialog"
       aria-label="Start Menu"
       onContextMenu={(e) => e.preventDefault()}
+      onClick={() => setItemMenu(null)}
       style={startMenuPositionStyle}
       className="fixed z-40 flex w-[630px] max-w-[calc(100vw-8px)] h-[590px] max-h-[calc(100vh-48px)] bg-[#1f1f1f]/95 backdrop-blur-2xl border border-white/10 shadow-[4px_-4px_24px_rgba(0,0,0,0.6)] text-white select-none"
     >
@@ -123,7 +199,15 @@ export function StartMenu() {
         </button>
 
         <div className="relative flex flex-col pb-1">
-          <button type="button" aria-label="User account" className={railBtnClass}>
+          <button
+            type="button"
+            aria-label="User account"
+            onClick={() => {
+              setUserMenuOpen((v) => !v);
+              setPowerMenuOpen(false);
+            }}
+            className={railBtnClass}
+          >
             <span className="w-[48px] flex items-center justify-center shrink-0">
               <span className="w-6 h-6 rounded-full bg-[#3a3a3a] border border-white/25 flex items-center justify-center text-[11px] font-medium">
                 U
@@ -131,6 +215,36 @@ export function StartMenu() {
             </span>
             {railExpanded && <span className="text-[12.5px] truncate">User</span>}
           </button>
+
+          {userMenuOpen && (
+            <div
+              role="menu"
+              aria-label="User account options"
+              className="absolute bottom-[176px] left-1 w-[170px] bg-[#2b2b2b] border border-[#555555] shadow-xl py-1 text-[12px] z-30"
+            >
+              <button
+                type="button"
+                onClick={() => openSettingsTab('Background')}
+                className="w-full text-left px-3 py-1.5 hover:bg-[#414141] cursor-default"
+              >
+                Change account settings
+              </button>
+              <button
+                type="button"
+                onClick={() => setLockScreenOpen(true)}
+                className="w-full text-left px-3 py-1.5 hover:bg-[#414141] cursor-default"
+              >
+                Lock
+              </button>
+              <button
+                type="button"
+                onClick={() => setLockScreenOpen(true)}
+                className="w-full text-left px-3 py-1.5 hover:bg-[#414141] cursor-default"
+              >
+                Sign out
+              </button>
+            </div>
+          )}
 
           <button
             type="button"
@@ -181,7 +295,10 @@ export function StartMenu() {
           <button
             type="button"
             aria-label="Power"
-            onClick={() => setPowerMenuOpen((v) => !v)}
+            onClick={() => {
+              setPowerMenuOpen((v) => !v);
+              setUserMenuOpen(false);
+            }}
             className={railBtnClass}
           >
             <span className="w-[48px] flex items-center justify-center shrink-0">
@@ -201,21 +318,21 @@ export function StartMenu() {
             >
               <button
                 type="button"
-                onClick={minimizeAll}
+                onClick={() => setPowerState('sleeping')}
                 className="w-full text-left px-3 py-1.5 hover:bg-[#414141] cursor-default"
               >
                 Sleep
               </button>
               <button
                 type="button"
-                onClick={minimizeAll}
+                onClick={() => setPowerState('shutting-down')}
                 className="w-full text-left px-3 py-1.5 hover:bg-[#414141] cursor-default"
               >
                 Shut down
               </button>
               <button
                 type="button"
-                onClick={minimizeAll}
+                onClick={() => setPowerState('restarting')}
                 className="w-full text-left px-3 py-1.5 hover:bg-[#414141] cursor-default"
               >
                 Restart
@@ -235,9 +352,15 @@ export function StartMenu() {
           {recentApps.map((app) => (
             <button
               key={`recent-${app.id}`}
+              data-start-nav="true"
               type="button"
               onClick={() => openApp(app.id)}
-              className="flex items-center gap-2.5 w-full h-[34px] px-2 hover:bg-white/10 transition-colors cursor-default text-left"
+              onContextMenu={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                openContextMenuForApp(app.id, e.clientX, e.clientY, false);
+              }}
+              className="flex items-center gap-2.5 w-full h-[34px] px-2 hover:bg-white/10 focus-visible:bg-white/15 focus-visible:outline-none transition-colors cursor-default text-left"
             >
               <img src={app.icon} alt="" className="w-5 h-5 object-contain shrink-0 pointer-events-none" />
               <span className="text-[12.5px] text-white truncate">{app.name}</span>
@@ -253,9 +376,15 @@ export function StartMenu() {
                 {list.map((app) => (
                   <button
                     key={app.id}
+                    data-start-nav="true"
                     type="button"
                     onClick={() => openApp(app.id)}
-                    className="flex items-center gap-2.5 w-full h-[34px] px-2 hover:bg-white/10 transition-colors cursor-default text-left"
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      openContextMenuForApp(app.id, e.clientX, e.clientY, false);
+                    }}
+                    className="flex items-center gap-2.5 w-full h-[34px] px-2 hover:bg-white/10 focus-visible:bg-white/15 focus-visible:outline-none transition-colors cursor-default text-left"
                   >
                     <img
                       src={app.icon}
@@ -294,9 +423,10 @@ export function StartMenu() {
                 {accessoryApps.map((app) => (
                   <button
                     key={`acc-${app.id}`}
+                    data-start-nav="true"
                     type="button"
                     onClick={() => openApp(app.id)}
-                    className="flex items-center gap-2.5 w-full h-[32px] px-2 hover:bg-white/10 transition-colors cursor-default text-left"
+                    className="flex items-center gap-2.5 w-full h-[32px] px-2 hover:bg-white/10 focus-visible:bg-white/15 focus-visible:outline-none transition-colors cursor-default text-left"
                   >
                     <img
                       src={app.icon}
@@ -313,37 +443,118 @@ export function StartMenu() {
       </div>
 
       {/* Right Column: Live Tiles */}
-      <div aria-label="Pinned tiles" className="win10-scroll flex-1 h-full overflow-y-auto p-3.5 space-y-5">
-        {START_TILE_GROUPS.map((group) => (
-          <div key={group.title}>
-            <div className="text-[12.5px] font-normal text-white/90 mb-2">{group.title}</div>
-            <div className="grid grid-cols-3 gap-1.5">
-              {group.appIds.map((id) => {
-                const app = appById.get(id);
-                if (!app) return null;
-                return (
-                  <button
-                    key={`tile-${app.id}`}
-                    type="button"
-                    onClick={() => openApp(app.id)}
-                    className="relative flex flex-col items-center justify-center h-[96px] bg-[#2c2c2c]/90 hover:bg-[#3a3a3a] hover:outline hover:outline-1 hover:outline-white/40 active:scale-[0.98] transition-all cursor-default p-2"
-                  >
-                    <img
-                      src={app.icon}
-                      alt={app.name}
-                      draggable={false}
-                      className="w-9 h-9 object-contain mb-2 pointer-events-none"
-                    />
-                    <span className="absolute bottom-1.5 left-2 right-2 text-left text-[11px] leading-tight text-white/95 truncate">
-                      {app.name}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ))}
+      <div aria-label="Pinned tiles" className="win10-scroll flex-1 h-full overflow-y-auto p-3.5 space-y-4">
+        <div className="text-[12.5px] font-normal text-white/90">Pinned Apps</div>
+        <div className="grid grid-cols-3 gap-1.5 auto-rows-[96px]">
+          {pinnedTileApps.map((app) => {
+            const size = tileSizes[app.id] ?? 'medium';
+            const spanClass = size === 'wide' ? 'col-span-2' : '';
+            const iconClass = size === 'small' ? 'w-6 h-6 mb-1' : 'w-9 h-9 mb-2';
+            return (
+              <button
+                key={`tile-${app.id}`}
+                type="button"
+                draggable
+                onDragStart={() => setDragTileId(app.id)}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={() => {
+                  if (dragTileId && dragTileId !== app.id) {
+                    reorderStartTiles(dragTileId, app.id);
+                  }
+                  setDragTileId(null);
+                }}
+                onDragEnd={() => setDragTileId(null)}
+                onClick={() => openApp(app.id)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  openContextMenuForApp(app.id, e.clientX, e.clientY, true);
+                }}
+                className={`relative flex flex-col items-center justify-center h-[96px] bg-[#2c2c2c]/90 hover:bg-[#3a3a3a] hover:outline hover:outline-1 hover:outline-white/40 active:scale-[0.98] transition-all cursor-default p-2 ${spanClass}`}
+              >
+                <img
+                  src={app.icon}
+                  alt={app.name}
+                  draggable={false}
+                  className={`${iconClass} object-contain pointer-events-none`}
+                />
+                {size !== 'small' && (
+                  <span className="absolute bottom-1.5 left-2 right-2 text-left text-[11px] leading-tight text-white/95 truncate">
+                    {app.name}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
       </div>
+
+      {/* Start Menu Item Context Menu */}
+      {itemMenu && (() => {
+        const isPinnedToStart = startMenuTileIds.includes(itemMenu.appId);
+        const isPinnedToTaskbar = taskbarSettings.pinnedAppIds.includes(itemMenu.appId);
+        const curSize = tileSizes[itemMenu.appId] ?? 'medium';
+        return (
+          <div
+            role="menu"
+            style={{ left: itemMenu.x, top: itemMenu.y }}
+            onClick={(e) => e.stopPropagation()}
+            className="absolute z-40 w-[176px] bg-[#2b2b2b] border border-[#666] shadow-2xl py-1 text-[12px]"
+          >
+            <button
+              type="button"
+              onClick={() => {
+                openApp(itemMenu.appId, undefined, undefined, true);
+                setItemMenu(null);
+              }}
+              className="w-full text-left px-3 py-1.5 hover:bg-[#414141] cursor-default"
+            >
+              Open new window
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (isPinnedToStart) unpinFromStart(itemMenu.appId);
+                else pinToStart(itemMenu.appId);
+                setItemMenu(null);
+              }}
+              className="w-full text-left px-3 py-1.5 hover:bg-[#414141] cursor-default"
+            >
+              {isPinnedToStart ? 'Unpin from Start' : 'Pin to Start'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                togglePinToTaskbar(itemMenu.appId);
+                setItemMenu(null);
+              }}
+              className="w-full text-left px-3 py-1.5 hover:bg-[#414141] cursor-default"
+            >
+              {isPinnedToTaskbar ? 'Unpin from taskbar' : 'Pin to taskbar'}
+            </button>
+            {itemMenu.isTile && (
+              <>
+                <div className="h-px bg-white/15 my-1 mx-2" />
+                <div className="px-3 py-1 text-[10.5px] text-white/55">Resize tile</div>
+                {(['small', 'medium', 'wide'] as TileSize[]).map((sz) => (
+                  <button
+                    key={sz}
+                    type="button"
+                    onClick={() => {
+                      setTileSize(itemMenu.appId, sz);
+                      setItemMenu(null);
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-1 hover:bg-[#414141] cursor-default capitalize"
+                  >
+                    <span>{sz}</span>
+                    {curSize === sz && <span>✓</span>}
+                  </button>
+                ))}
+              </>
+            )}
+          </div>
+        );
+      })()}
     </aside>
   );
 }

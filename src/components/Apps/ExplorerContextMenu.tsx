@@ -116,8 +116,11 @@ export function ExplorerContextMenu({
   onClose,
 }: ExplorerContextMenuProps) {
   const canPaste = useCanPasteFiles(currentFolderId);
+  const canUndo = useFileSystemStore((state) => state.undoStack.length > 0);
   const setFileClipboard = useFileSystemStore((state) => state.setFileClipboard);
   const pasteFiles = useFileSystemStore((state) => state.pasteFiles);
+  const pasteShortcuts = useFileSystemStore((state) => state.pasteShortcuts);
+  const undo = useFileSystemStore((state) => state.undo);
 
   const [openSubmenu, setOpenSubmenu] = useState<SubmenuKey>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -526,30 +529,40 @@ export function ExplorerContextMenu({
         </div>
       </button>
 
-      <div
+      <button
+        type="button"
         role="menuitem"
-        aria-disabled="true"
+        disabled={!canPaste}
         onMouseEnter={() => setOpenSubmenu(null)}
-        className={disabledRowClass}
+        className={canPaste ? `${rowClass} w-full` : `${disabledRowClass} w-full`}
+        onClick={() => {
+          pasteShortcuts(currentFolderId);
+          onClose();
+        }}
       >
         <div className="flex items-center">
           <span className={gutterClass} />
           <span>Paste shortcut</span>
         </div>
-      </div>
+      </button>
 
-      <div
+      <button
+        type="button"
         role="menuitem"
-        aria-disabled="true"
+        disabled={!canUndo}
         onMouseEnter={() => setOpenSubmenu(null)}
-        className={disabledRowClass}
+        className={canUndo ? `${rowClass} w-full` : `${disabledRowClass} w-full`}
+        onClick={() => {
+          undo();
+          onClose();
+        }}
       >
         <div className="flex items-center">
           <span className={gutterClass} />
           <span>Undo</span>
         </div>
         <span className="text-[11px] pr-1">Ctrl+Z</span>
-      </div>
+      </button>
 
       <div className={dividerClass} />
 

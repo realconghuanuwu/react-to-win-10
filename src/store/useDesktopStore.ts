@@ -93,20 +93,53 @@ export interface WindowBounds {
   height: number;
 }
 
-export type SnapSide = 'left' | 'right';
+export type SnapSide =
+  | 'left'
+  | 'right'
+  | 'top'
+  | 'top-left'
+  | 'top-right'
+  | 'bottom-left'
+  | 'bottom-right';
 
 export function getSnapBounds(side: SnapSide, settings: TaskbarSettings): WindowBounds | null {
   if (typeof window === 'undefined') return null;
   const insets = getTaskbarInsets(settings);
   const width = window.innerWidth - insets.left - insets.right;
   const height = window.innerHeight - insets.top - insets.bottom;
-  if (width < 2 || height < 1) return null;
-  const split = Math.floor(width / 2);
-  return { x: side === 'left' ? 0 : split, y: 0, width: side === 'left' ? split : width - split, height };
+  if (width < 2 || height < 2) return null;
+  const splitX = Math.floor(width / 2);
+  const splitY = Math.floor(height / 2);
+  switch (side) {
+    case 'left':
+      return { x: 0, y: 0, width: splitX, height };
+    case 'right':
+      return { x: splitX, y: 0, width: width - splitX, height };
+    case 'top':
+      return { x: 0, y: 0, width, height };
+    case 'top-left':
+      return { x: 0, y: 0, width: splitX, height: splitY };
+    case 'top-right':
+      return { x: splitX, y: 0, width: width - splitX, height: splitY };
+    case 'bottom-left':
+      return { x: 0, y: splitY, width: splitX, height: height - splitY };
+    case 'bottom-right':
+      return { x: splitX, y: splitY, width: width - splitX, height: height - splitY };
+  }
 }
+
+export interface VirtualDesktop {
+  id: string;
+  name: string;
+}
+
+export type TileSize = 'small' | 'medium' | 'wide';
+export type PowerState = 'running' | 'sleeping' | 'shutting-down' | 'restarting';
 
 export interface AppWindow extends WindowBounds {
   id: string;
+  appId: string;
+  desktopId: string;
   title: string;
   icon: string;
   minWidth: number;
@@ -114,11 +147,12 @@ export interface AppWindow extends WindowBounds {
   zIndex: number;
   isMinimized: boolean;
   isMaximized: boolean;
+  snappedSide?: SnapSide;
   snapRestoreBounds?: WindowBounds;
 }
 
 export type DesktopIconSize = 'small' | 'medium' | 'large';
-export type DesktopSortField = 'default' | 'name';
+export type DesktopSortField = 'default' | 'name' | 'size' | 'type' | 'date';
 
 const DEFAULT_POSITIONS: Record<string, GridSlot> = {
   'recycle-bin': { col: 0, row: 0 },
@@ -184,18 +218,47 @@ interface DesktopState {
   paintOpenNonce: number;
   iconSize: DesktopIconSize;
   showDesktopIcons: boolean;
+  autoArrangeIcons: boolean;
+  alignToGrid: boolean;
+  freeIconPositions: Record<string, { x: number; y: number }>;
   sortBy: DesktopSortField;
   windows: AppWindow[];
   activeAppId: string | null;
   topZIndex: number;
+  virtualDesktops: VirtualDesktop[];
+  activeDesktopId: string;
+  shakeRestoreIds: string[];
   contextMenuPos: ContextMenuPosition | null;
   taskbarContextMenuPos: TaskbarContextMenuPosition | null;
+  winXMenuPos: { x: number; y: number } | null;
+  titlebarMenuState: { windowId: string; x: number; y: number } | null;
+  isAltTabOpen: boolean;
+  altTabIndex: number;
+  isRunDialogOpen: boolean;
+  runHistory: string[];
+  isLockScreenOpen: boolean;
+  powerState: PowerState;
+  isActionCenterOpen: boolean;
+  isSearchOpen: boolean;
+  desktopPropertiesTargetId: string | null;
+  shortcutModalOpen: boolean;
+  startMenuTileIds: string[];
+  tileSizes: Record<string, TileSize>;
+  wifiEnabled: boolean;
+  bluetoothEnabled: boolean;
+  nightLightEnabled: boolean;
+  airplaneMode: boolean;
+  focusAssist: boolean;
+  networkName: string;
+  appVolumes: Record<string, number>;
+  calendarEvents: Record<string, string[]>;
   taskbarSettings: TaskbarSettings;
   personalizationSettings: PersonalizationSettings;
   systemVolume: number;
   isSystemMuted: boolean;
   setSystemVolume: (volume: number) => void;
   toggleSystemMute: () => void;
+  setAppVolume: (appId: string, volume: number) => void;
   settingsActiveTab: PersonalizationTab;
   hydrate: () => Promise<void>;
   selectIcon: (id: string, multiSelect: boolean) => void;
@@ -203,6 +266,26 @@ interface DesktopState {
   clearSelection: () => void;
   setContextMenuPos: (pos: ContextMenuPosition | null) => void;
   setTaskbarContextMenuPos: (pos: TaskbarContextMenuPosition | null) => void;
+  setWinXMenuPos: (pos: { x: number; y: number } | null) => void;
+  setTitlebarMenuState: (state: { windowId: string; x: number; y: number } | null) => void;
+  setAltTabState: (open: boolean, index?: number) => void;
+  setRunDialogOpen: (open: boolean) => void;
+  addRunHistory: (cmd: string) => void;
+  setLockScreenOpen: (open: boolean) => void;
+  setPowerState: (state: PowerState) => void;
+  setActionCenterOpen: (open: boolean) => void;
+  setSearchOpen: (open: boolean) => void;
+  setDesktopPropertiesTargetId: (id: string | null) => void;
+  setShortcutModalOpen: (open: boolean) => void;
+  toggleQuickSetting: (key: 'wifiEnabled' | 'bluetoothEnabled' | 'nightLightEnabled' | 'airplaneMode' | 'focusAssist') => void;
+  setNetworkName: (name: string) => void;
+  addCalendarEvent: (dateKey: string, text: string) => void;
+  removeCalendarEvent: (dateKey: string, idx: number) => void;
+  pinToStart: (appId: string) => void;
+  unpinFromStart: (appId: string) => void;
+  setTileSize: (appId: string, size: TileSize) => void;
+  reorderStartTiles: (fromId: string, toId: string) => void;
+  reorderPinnedTaskbarApps: (fromId: string, toId: string) => void;
   updateTaskbarSettings: (
     updater: Partial<TaskbarSettings> | ((prev: TaskbarSettings) => TaskbarSettings),
   ) => void;
@@ -222,12 +305,16 @@ interface DesktopState {
   triggerRefresh: () => void;
   setIconSize: (size: DesktopIconSize) => void;
   toggleShowDesktopIcons: () => void;
+  setAutoArrangeIcons: (enabled: boolean) => void;
+  setAlignToGrid: (enabled: boolean) => void;
+  setFreeIconPosition: (id: string, pos: { x: number; y: number }) => void;
   sortAppsByName: (visibleIds?: string[]) => void;
+  sortDesktopBy: (field: DesktopSortField, orderedIds: string[], maxRows?: number) => void;
   moveIconToSlot: (id: string, slot: GridSlot, allVisibleIds: string[], maxRows: number) => void;
   setIconPosition: (id: string, slot: GridSlot) => void;
   setRenamingIconId: (id: string | null) => void;
   renameShortcut: (id: string, newLabel: string) => void;
-  openApp: (id: string, explorerFolderId?: string, revealFileId?: string) => void;
+  openApp: (id: string, explorerFolderId?: string, revealFileId?: string, forceNewInstance?: boolean) => void;
   openNotepadFile: (fileId: string | null) => void;
   openOfficeFile: (appId: 'word' | 'excel', fileId: string | null) => void;
   openMediaFile: (fileId: string | null) => void;
@@ -238,6 +325,11 @@ interface DesktopState {
   toggleMaximizeWindow: (id: string) => void;
   snapActiveWindow: (side: SnapSide) => boolean;
   snapWindow: (id: string, side: SnapSide) => boolean;
+  snapOrMaximizeUp: () => boolean;
+  unSnapOrMinimizeActiveWindow: () => boolean;
+  minimizeOtherWindows: (keepId: string) => void;
+  restoreAllMinimized: () => void;
+  clampWindowsToViewport: () => void;
   closeWindow: (id: string) => void;
   updateWindowBounds: (id: string, bounds: WindowBounds, unmaximize?: boolean) => void;
   setWindowTitle: (id: string, title: string) => void;
@@ -246,15 +338,30 @@ interface DesktopState {
   cascadeWindows: () => void;
   stackWindows: () => void;
   sideBySideWindows: () => void;
+  createVirtualDesktop: () => string;
+  switchVirtualDesktop: (desktopId: string) => void;
+  switchVirtualDesktopByOffset: (delta: -1 | 1) => void;
+  removeVirtualDesktop: (desktopId: string) => void;
+  moveWindowToDesktop: (winId: string, desktopId: string) => void;
 }
 
 const DEFAULT_WIDTH = 720;
 const DEFAULT_HEIGHT = 480;
 
-function getTopVisibleWindowId(windows: AppWindow[]): string | null {
-  const visible = windows.filter((w) => !w.isMinimized);
+function getTopVisibleWindowId(windows: AppWindow[], activeDesktopId?: string): string | null {
+  const visible = windows.filter((w) => !w.isMinimized && (!activeDesktopId || w.desktopId === activeDesktopId));
   if (visible.length === 0) return null;
   return visible.reduce((top, current) => (current.zIndex > top.zIndex ? current : top)).id;
+}
+
+let windowInstanceCounter = 1;
+function allocateWindowId(appId: string, windows: AppWindow[]): string {
+  if (!windows.some((w) => w.id === appId)) return appId;
+  let candidate = `${appId}#${++windowInstanceCounter}`;
+  while (windows.some((w) => w.id === candidate)) {
+    candidate = `${appId}#${++windowInstanceCounter}`;
+  }
+  return candidate;
 }
 
 function windowMaximizedKey(appId: string): string {
@@ -350,12 +457,43 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
   paintOpenNonce: 0,
   iconSize: 'medium',
   showDesktopIcons: true,
+  autoArrangeIcons: true,
+  alignToGrid: true,
+  freeIconPositions: {},
   sortBy: 'default',
   windows: [],
   activeAppId: null,
   topZIndex: 1,
+  virtualDesktops: [{ id: 'desktop-1', name: 'Desktop 1' }],
+  activeDesktopId: 'desktop-1',
+  shakeRestoreIds: [],
   contextMenuPos: null,
   taskbarContextMenuPos: null,
+  winXMenuPos: null,
+  titlebarMenuState: null,
+  isAltTabOpen: false,
+  altTabIndex: 0,
+  isRunDialogOpen: false,
+  runHistory: ['notepad', 'calc', 'explorer', 'taskmgr'],
+  isLockScreenOpen: false,
+  powerState: 'running',
+  isActionCenterOpen: false,
+  isSearchOpen: false,
+  desktopPropertiesTargetId: null,
+  shortcutModalOpen: false,
+  startMenuTileIds: [
+    'word', 'excel', 'this-pc', 'explorer', 'calculator', 'chrome', 'edge', 'photos', 'notepad',
+    'store', 'settings', 'paint', 'snip', 'recycle-bin',
+  ],
+  tileSizes: {},
+  wifiEnabled: true,
+  bluetoothEnabled: true,
+  nightLightEnabled: false,
+  airplaneMode: false,
+  focusAssist: false,
+  networkName: 'Wi-Fi (Home_5G)',
+  appVolumes: {},
+  calendarEvents: {},
   taskbarSettings: DEFAULT_TASKBAR_SETTINGS,
   systemVolume: (() => {
     try {
@@ -409,6 +547,14 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
       }
       return { isSystemMuted: nextMuted };
     }),
+  setAppVolume: (appId, volume) =>
+    set((state) => ({
+      appVolumes: {
+        ...state.appVolumes,
+        [appId]: Math.max(0, Math.min(100, Math.round(volume))),
+      },
+    })),
+
   personalizationSettings: DEFAULT_PERSONALIZATION_SETTINGS,
   settingsActiveTab: 'Background',
 
@@ -466,8 +612,12 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
       selectedIconIds: [],
       contextMenuPos: null,
       taskbarContextMenuPos: null,
+      winXMenuPos: null,
+      titlebarMenuState: null,
       isStartMenuOpen: false,
       isTaskViewOpen: false,
+      isActionCenterOpen: false,
+      isSearchOpen: false,
       renamingIconId: null,
     }),
 
@@ -475,16 +625,189 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
     set({
       contextMenuPos: pos,
       taskbarContextMenuPos: null,
+      winXMenuPos: null,
+      titlebarMenuState: null,
       isStartMenuOpen: false,
       isTaskViewOpen: false,
+      isActionCenterOpen: false,
     }),
 
   setTaskbarContextMenuPos: (pos) =>
     set({
       taskbarContextMenuPos: pos,
       contextMenuPos: null,
+      winXMenuPos: null,
+      titlebarMenuState: null,
       isStartMenuOpen: false,
       isTaskViewOpen: false,
+      isActionCenterOpen: false,
+    }),
+
+  setWinXMenuPos: (winXMenuPos) =>
+    set({
+      winXMenuPos,
+      contextMenuPos: null,
+      taskbarContextMenuPos: null,
+      titlebarMenuState: null,
+      isStartMenuOpen: false,
+      isTaskViewOpen: false,
+      isActionCenterOpen: false,
+    }),
+
+  setTitlebarMenuState: (titlebarMenuState) =>
+    set({
+      titlebarMenuState,
+      contextMenuPos: null,
+      taskbarContextMenuPos: null,
+      winXMenuPos: null,
+    }),
+
+  setAltTabState: (isAltTabOpen, altTabIndex) =>
+    set((state) => ({
+      isAltTabOpen,
+      altTabIndex: altTabIndex !== undefined ? altTabIndex : state.altTabIndex,
+    })),
+
+  setRunDialogOpen: (isRunDialogOpen) =>
+    set({
+      isRunDialogOpen,
+      isStartMenuOpen: false,
+      winXMenuPos: null,
+      contextMenuPos: null,
+      taskbarContextMenuPos: null,
+    }),
+
+  addRunHistory: (cmd) =>
+    set((state) => {
+      const trimmed = cmd.trim();
+      if (!trimmed) return state;
+      return {
+        runHistory: [trimmed, ...state.runHistory.filter((c) => c !== trimmed)].slice(0, 12),
+      };
+    }),
+
+  setLockScreenOpen: (isLockScreenOpen) =>
+    set({
+      isLockScreenOpen,
+      isStartMenuOpen: false,
+      isTaskViewOpen: false,
+      isActionCenterOpen: false,
+      winXMenuPos: null,
+      contextMenuPos: null,
+      taskbarContextMenuPos: null,
+    }),
+
+  setPowerState: (powerState) =>
+    set({
+      powerState,
+      isStartMenuOpen: false,
+      winXMenuPos: null,
+    }),
+
+  setActionCenterOpen: (isActionCenterOpen) =>
+    set({
+      isActionCenterOpen,
+      isStartMenuOpen: false,
+      isTaskViewOpen: false,
+      winXMenuPos: null,
+      contextMenuPos: null,
+      taskbarContextMenuPos: null,
+    }),
+
+  setSearchOpen: (isSearchOpen) =>
+    set((state) => ({
+      isSearchOpen,
+      isStartMenuOpen: isSearchOpen ? false : state.isStartMenuOpen,
+    })),
+
+  setDesktopPropertiesTargetId: (desktopPropertiesTargetId) =>
+    set({ desktopPropertiesTargetId, contextMenuPos: null }),
+
+  setShortcutModalOpen: (shortcutModalOpen) =>
+    set({ shortcutModalOpen, contextMenuPos: null }),
+
+  toggleQuickSetting: (key) =>
+    set((state) => {
+      const nextVal = !state[key];
+      if (key === 'airplaneMode' && nextVal) {
+        return { airplaneMode: true, wifiEnabled: false, bluetoothEnabled: false };
+      }
+      if (key === 'wifiEnabled' && nextVal && state.airplaneMode) {
+        return { wifiEnabled: true, airplaneMode: false };
+      }
+      return { [key]: nextVal };
+    }),
+
+  setNetworkName: (networkName) => set({ networkName }),
+
+  addCalendarEvent: (dateKey, text) =>
+    set((state) => {
+      const trimmed = text.trim();
+      if (!trimmed) return state;
+      const existing = state.calendarEvents[dateKey] ?? [];
+      return {
+        calendarEvents: {
+          ...state.calendarEvents,
+          [dateKey]: [...existing, trimmed],
+        },
+      };
+    }),
+
+  removeCalendarEvent: (dateKey, idx) =>
+    set((state) => {
+      const existing = state.calendarEvents[dateKey] ?? [];
+      return {
+        calendarEvents: {
+          ...state.calendarEvents,
+          [dateKey]: existing.filter((_, i) => i !== idx),
+        },
+      };
+    }),
+
+  pinToStart: (appId) =>
+    set((state) => ({
+      startMenuTileIds: state.startMenuTileIds.includes(appId)
+        ? state.startMenuTileIds
+        : [...state.startMenuTileIds, appId],
+    })),
+
+  unpinFromStart: (appId) =>
+    set((state) => ({
+      startMenuTileIds: state.startMenuTileIds.filter((id) => id !== appId),
+    })),
+
+  setTileSize: (appId, size) =>
+    set((state) => ({
+      tileSizes: { ...state.tileSizes, [appId]: size },
+    })),
+
+  reorderStartTiles: (fromId, toId) =>
+    set((state) => {
+      if (fromId === toId) return state;
+      const list = [...state.startMenuTileIds];
+      const fromIdx = list.indexOf(fromId);
+      const toIdx = list.indexOf(toId);
+      if (fromIdx < 0 || toIdx < 0) return state;
+      const [moved] = list.splice(fromIdx, 1);
+      list.splice(toIdx, 0, moved);
+      return { startMenuTileIds: list };
+    }),
+
+  reorderPinnedTaskbarApps: (fromId, toId) =>
+    set((state) => {
+      if (fromId === toId) return state;
+      const pinned = [...state.taskbarSettings.pinnedAppIds];
+      const fromIdx = pinned.indexOf(fromId);
+      const toIdx = pinned.indexOf(toId);
+      if (fromIdx < 0 || toIdx < 0) return state;
+      const [moved] = pinned.splice(fromIdx, 1);
+      pinned.splice(toIdx, 0, moved);
+      const nextSettings: TaskbarSettings = {
+        ...state.taskbarSettings,
+        pinnedAppIds: pinned,
+      };
+      persistTaskbarSettings(nextSettings);
+      return { taskbarSettings: nextSettings };
     }),
 
   updateTaskbarSettings: (updater) =>
@@ -515,20 +838,23 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
       if (!app) return state;
       const displayTitle = state.shortcutLabels[app.id] ?? app.name;
       const nextZ = state.topZIndex + 1;
-      const existing = state.windows.find((w) => w.id === 'settings');
+      const existing = state.windows.find(
+        (w) => (w.appId ?? w.id) === 'settings' && w.desktopId === state.activeDesktopId,
+      );
 
       if (existing) {
         return {
           settingsActiveTab: tab,
           windows: state.windows.map((w) =>
-            w.id === 'settings'
+            w.id === existing.id
               ? { ...w, title: displayTitle, isMinimized: false, zIndex: nextZ }
               : w,
           ),
-          activeAppId: 'settings',
+          activeAppId: existing.id,
           topZIndex: nextZ,
           contextMenuPos: null,
           taskbarContextMenuPos: null,
+          winXMenuPos: null,
           isStartMenuOpen: false,
           isTaskViewOpen: false,
         };
@@ -539,12 +865,15 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
         state.windows.length,
         state.taskbarSettings,
       );
+      const winId = allocateWindowId('settings', state.windows);
       return {
         settingsActiveTab: tab,
         windows: [
           ...state.windows,
           {
-            id: 'settings',
+            id: winId,
+            appId: 'settings',
+            desktopId: state.activeDesktopId,
             title: displayTitle,
             icon: app.icon,
             ...layout,
@@ -552,10 +881,11 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
             isMinimized: false,
           },
         ],
-        activeAppId: 'settings',
+        activeAppId: winId,
         topZIndex: nextZ,
         contextMenuPos: null,
         taskbarContextMenuPos: null,
+        winXMenuPos: null,
         isStartMenuOpen: false,
         isTaskViewOpen: false,
       };
@@ -617,6 +947,33 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
       contextMenuPos: null,
       renamingIconId: null,
     })),
+
+  setAutoArrangeIcons: (autoArrangeIcons) => set({ autoArrangeIcons, contextMenuPos: null }),
+
+  setAlignToGrid: (alignToGrid) => set({ alignToGrid, contextMenuPos: null }),
+
+  setFreeIconPosition: (id, pos) =>
+    set((state) => ({
+      freeIconPositions: { ...state.freeIconPositions, [id]: pos },
+    })),
+
+  sortDesktopBy: (field, orderedIds, maxRows = 7) =>
+    set((state) => {
+      const nextPositions = { ...state.iconPositions };
+      orderedIds.forEach((id, index) => {
+        nextPositions[id] = {
+          col: Math.floor(index / maxRows),
+          row: index % maxRows,
+        };
+      });
+      persistLayout({ positions: nextPositions, labels: state.shortcutLabels });
+      return {
+        iconPositions: nextPositions,
+        freeIconPositions: {},
+        sortBy: field,
+        contextMenuPos: null,
+      };
+    }),
 
   sortAppsByName: (visibleIds) =>
     set((state) => {
@@ -706,14 +1063,18 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
     });
   },
 
-  openApp: (id, explorerFolderId, revealFileId) =>
+  openApp: (id, explorerFolderId, revealFileId, forceNewInstance = false) =>
     set((state) => {
       const app = state.apps.find((item) => item.id === id);
       if (!app) return state;
 
       const displayTitle = state.shortcutLabels[app.id] ?? app.name;
       const nextZ = state.topZIndex + 1;
-      const existing = state.windows.find((w) => w.id === id);
+      const existing = forceNewInstance
+        ? undefined
+        : state.windows.find(
+            (w) => (w.appId ?? w.id) === id && w.desktopId === state.activeDesktopId,
+          );
       const nextStartFolder =
         explorerFolderId ?? (!existing && id === 'explorer' ? 'this-pc' : state.explorerStartFolderId);
       const explorerReveal = id === 'explorer'
@@ -723,11 +1084,12 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
       if (existing) {
         return {
           windows: state.windows.map((w) =>
-            w.id === id ? { ...w, title: displayTitle, isMinimized: false, zIndex: nextZ } : w,
+            w.id === existing.id ? { ...w, title: displayTitle, isMinimized: false, zIndex: nextZ } : w,
           ),
-          activeAppId: id,
+          activeAppId: existing.id,
           topZIndex: nextZ,
           contextMenuPos: null,
+          winXMenuPos: null,
           isStartMenuOpen: false,
           explorerStartFolderId: nextStartFolder,
           explorerReveal,
@@ -739,8 +1101,11 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
         state.windows.length,
         state.taskbarSettings,
       );
+      const winId = allocateWindowId(app.id, state.windows);
       const newWindow: AppWindow = {
-        id: app.id,
+        id: winId,
+        appId: app.id,
+        desktopId: state.activeDesktopId,
         title: displayTitle,
         icon: app.icon,
         ...layout,
@@ -750,9 +1115,10 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
 
       return {
         windows: [...state.windows, newWindow],
-        activeAppId: id,
+        activeAppId: winId,
         topZIndex: nextZ,
         contextMenuPos: null,
+        winXMenuPos: null,
         isStartMenuOpen: false,
         explorerStartFolderId: nextStartFolder,
         explorerReveal,
@@ -768,14 +1134,16 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
       if (!app) return state;
 
       const nextZ = state.topZIndex + 1;
-      const existing = state.windows.find((w) => w.id === appId);
+      const existing = state.windows.find(
+        (w) => (w.appId ?? w.id) === appId && w.desktopId === state.activeDesktopId,
+      );
 
       if (existing) {
         return {
           windows: state.windows.map((w) =>
-            w.id === appId ? { ...w, isMinimized: false, zIndex: nextZ } : w,
+            w.id === existing.id ? { ...w, isMinimized: false, zIndex: nextZ } : w,
           ),
-          activeAppId: appId,
+          activeAppId: existing.id,
           topZIndex: nextZ,
           contextMenuPos: null,
           isStartMenuOpen: false,
@@ -789,8 +1157,11 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
         state.windows.length,
         state.taskbarSettings,
       );
+      const winId = allocateWindowId(appId, state.windows);
       const newWindow: AppWindow = {
-        id: appId,
+        id: winId,
+        appId,
+        desktopId: state.activeDesktopId,
         title: app.name,
         icon: app.icon,
         ...layout,
@@ -800,7 +1171,7 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
 
       return {
         windows: [...state.windows, newWindow],
-        activeAppId: appId,
+        activeAppId: winId,
         topZIndex: nextZ,
         contextMenuPos: null,
         isStartMenuOpen: false,
@@ -815,14 +1186,16 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
       if (!app) return state;
 
       const nextZ = state.topZIndex + 1;
-      const existing = state.windows.find((w) => w.id === 'media-player');
+      const existing = state.windows.find(
+        (w) => (w.appId ?? w.id) === 'media-player' && w.desktopId === state.activeDesktopId,
+      );
 
       if (existing) {
         return {
           windows: state.windows.map((w) =>
-            w.id === 'media-player' ? { ...w, isMinimized: false, zIndex: nextZ } : w,
+            w.id === existing.id ? { ...w, isMinimized: false, zIndex: nextZ } : w,
           ),
-          activeAppId: 'media-player',
+          activeAppId: existing.id,
           topZIndex: nextZ,
           contextMenuPos: null,
           isStartMenuOpen: false,
@@ -836,8 +1209,11 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
         state.windows.length,
         state.taskbarSettings,
       );
+      const winId = allocateWindowId('media-player', state.windows);
       const newWindow: AppWindow = {
-        id: 'media-player',
+        id: winId,
+        appId: 'media-player',
+        desktopId: state.activeDesktopId,
         title: app.name,
         icon: app.icon,
         ...layout,
@@ -847,7 +1223,7 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
 
       return {
         windows: [...state.windows, newWindow],
-        activeAppId: 'media-player',
+        activeAppId: winId,
         topZIndex: nextZ,
         contextMenuPos: null,
         isStartMenuOpen: false,
@@ -862,14 +1238,16 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
       if (!app) return state;
 
       const nextZ = state.topZIndex + 1;
-      const existing = state.windows.find((w) => w.id === 'notepad');
+      const existing = state.windows.find(
+        (w) => (w.appId ?? w.id) === 'notepad' && w.desktopId === state.activeDesktopId,
+      );
 
       if (existing) {
         return {
           windows: state.windows.map((w) =>
-            w.id === 'notepad' ? { ...w, isMinimized: false, zIndex: nextZ } : w,
+            w.id === existing.id ? { ...w, isMinimized: false, zIndex: nextZ } : w,
           ),
-          activeAppId: 'notepad',
+          activeAppId: existing.id,
           topZIndex: nextZ,
           contextMenuPos: null,
           isStartMenuOpen: false,
@@ -883,8 +1261,11 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
         state.windows.length,
         state.taskbarSettings,
       );
+      const winId = allocateWindowId('notepad', state.windows);
       const newWindow: AppWindow = {
-        id: 'notepad',
+        id: winId,
+        appId: 'notepad',
+        desktopId: state.activeDesktopId,
         title: 'Notepad',
         icon: app.icon,
         ...layout,
@@ -894,7 +1275,7 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
 
       return {
         windows: [...state.windows, newWindow],
-        activeAppId: 'notepad',
+        activeAppId: winId,
         topZIndex: nextZ,
         contextMenuPos: null,
         isStartMenuOpen: false,
@@ -909,14 +1290,16 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
       if (!app) return state;
 
       const nextZ = state.topZIndex + 1;
-      const existing = state.windows.find((w) => w.id === 'paint');
+      const existing = state.windows.find(
+        (w) => (w.appId ?? w.id) === 'paint' && w.desktopId === state.activeDesktopId,
+      );
 
       if (existing) {
         return {
           windows: state.windows.map((w) =>
-            w.id === 'paint' ? { ...w, isMinimized: false, zIndex: nextZ } : w,
+            w.id === existing.id ? { ...w, isMinimized: false, zIndex: nextZ } : w,
           ),
-          activeAppId: 'paint',
+          activeAppId: existing.id,
           topZIndex: nextZ,
           contextMenuPos: null,
           isStartMenuOpen: false,
@@ -930,8 +1313,11 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
         state.windows.length,
         state.taskbarSettings,
       );
+      const winId = allocateWindowId('paint', state.windows);
       const newWindow: AppWindow = {
-        id: 'paint',
+        id: winId,
+        appId: 'paint',
+        desktopId: state.activeDesktopId,
         title: 'Untitled - Paint',
         icon: app.icon,
         ...layout,
@@ -941,7 +1327,7 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
 
       return {
         windows: [...state.windows, newWindow],
-        activeAppId: 'paint',
+        activeAppId: winId,
         topZIndex: nextZ,
         contextMenuPos: null,
         isStartMenuOpen: false,
@@ -952,8 +1338,10 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
 
   toggleTaskbarApp: (id) =>
     set((state) => {
-      const existing = state.windows.find((w) => w.id === id);
-      if (!existing) {
+      const matching = state.windows.filter(
+        (w) => (w.appId ?? w.id) === id && w.desktopId === state.activeDesktopId,
+      );
+      if (matching.length === 0) {
         const app = state.apps.find((item) => item.id === id);
         if (!app) return state;
         const displayTitle = state.shortcutLabels[app.id] ?? app.name;
@@ -963,11 +1351,14 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
           state.windows.length,
           state.taskbarSettings,
         );
+        const winId = allocateWindowId(app.id, state.windows);
         return {
           windows: [
             ...state.windows,
             {
-              id: app.id,
+              id: winId,
+              appId: app.id,
+              desktopId: state.activeDesktopId,
               title: displayTitle,
               icon: app.icon,
               ...layout,
@@ -975,30 +1366,45 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
               isMinimized: false,
             },
           ],
-          activeAppId: id,
+          activeAppId: winId,
           topZIndex: nextZ,
           contextMenuPos: null,
           isStartMenuOpen: false,
         };
       }
 
-      if (state.activeAppId === id && !existing.isMinimized) {
-        const updated = state.windows.map((w) =>
-          w.id === id ? { ...w, isMinimized: true } : w,
-        );
+      if (matching.length === 1) {
+        const existing = matching[0];
+        if (state.activeAppId === existing.id && !existing.isMinimized) {
+          const updated = state.windows.map((w) =>
+            w.id === existing.id ? { ...w, isMinimized: true } : w,
+          );
+          return {
+            windows: updated,
+            activeAppId: getTopVisibleWindowId(updated, state.activeDesktopId),
+            isStartMenuOpen: false,
+          };
+        }
+        const nextZ = state.topZIndex + 1;
         return {
-          windows: updated,
-          activeAppId: getTopVisibleWindowId(updated),
+          windows: state.windows.map((w) =>
+            w.id === existing.id ? { ...w, isMinimized: false, zIndex: nextZ } : w,
+          ),
+          activeAppId: existing.id,
+          topZIndex: nextZ,
           isStartMenuOpen: false,
         };
       }
 
+      // Multiple instances open: focus next instance or restore top one
+      const activeIdx = matching.findIndex((w) => w.id === state.activeAppId && !w.isMinimized);
+      const nextTarget = activeIdx >= 0 ? matching[(activeIdx + 1) % matching.length] : matching[0];
       const nextZ = state.topZIndex + 1;
       return {
         windows: state.windows.map((w) =>
-          w.id === id ? { ...w, isMinimized: false, zIndex: nextZ } : w,
+          w.id === nextTarget.id ? { ...w, isMinimized: false, zIndex: nextZ } : w,
         ),
-        activeAppId: id,
+        activeAppId: nextTarget.id,
         topZIndex: nextZ,
         isStartMenuOpen: false,
       };
@@ -1026,7 +1432,7 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
       );
       return {
         windows: updated,
-        activeAppId: getTopVisibleWindowId(updated),
+        activeAppId: getTopVisibleWindowId(updated, state.activeDesktopId),
       };
     }),
 
@@ -1036,7 +1442,7 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
       return {
         windows: state.windows.map((w) =>
           w.id === id
-            ? { ...w, isMaximized: !w.isMaximized, isMinimized: false, zIndex: nextZ }
+            ? { ...w, isMaximized: !w.isMaximized, isMinimized: false, snappedSide: undefined, zIndex: nextZ }
             : w,
         ),
         activeAppId: id,
@@ -1053,33 +1459,145 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
   snapWindow: (id, side) => {
     const state = get();
     const target = state.windows.find((item) => item.id === id);
-    const bounds = getSnapBounds(side, state.taskbarSettings);
-    if (!target || !bounds) return false;
-    const { x, y, width, height } = target;
+    if (!target) return false;
     const zIndex = state.topZIndex + 1;
+    if (side === 'top') {
+      set({
+        windows: state.windows.map((item) =>
+          item.id === id
+            ? { ...item, isMaximized: true, isMinimized: false, snappedSide: 'top', zIndex }
+            : item,
+        ),
+        activeAppId: id,
+        topZIndex: zIndex,
+      });
+      return true;
+    }
+    const bounds = getSnapBounds(side, state.taskbarSettings);
+    if (!bounds) return false;
+    const { x, y, width, height } = target;
     set({
-      windows: state.windows.map((item) => item.id === id ? {
-        ...item,
-        ...bounds,
-        snapRestoreBounds: item.snapRestoreBounds ?? { x, y, width, height },
-        isMaximized: false,
-        isMinimized: false,
-        zIndex,
-      } : item),
+      windows: state.windows.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              ...bounds,
+              snapRestoreBounds: item.snapRestoreBounds ?? { x, y, width, height },
+              snappedSide: side,
+              isMaximized: false,
+              isMinimized: false,
+              zIndex,
+            }
+          : item,
+      ),
       activeAppId: id,
       topZIndex: zIndex,
     });
     return true;
   },
 
+  snapOrMaximizeUp: () => {
+    const state = get();
+    const active = state.windows.find((w) => w.id === state.activeAppId && !w.isMinimized);
+    if (!active) return false;
+    if (active.snappedSide === 'left') return state.snapWindow(active.id, 'top-left');
+    if (active.snappedSide === 'right') return state.snapWindow(active.id, 'top-right');
+    if (active.snappedSide === 'bottom-left') return state.snapWindow(active.id, 'left');
+    if (active.snappedSide === 'bottom-right') return state.snapWindow(active.id, 'right');
+    if (!active.isMaximized) {
+      state.toggleMaximizeWindow(active.id);
+      return true;
+    }
+    return false;
+  },
+
+  unSnapOrMinimizeActiveWindow: () => {
+    const state = get();
+    const active = state.windows.find((w) => w.id === state.activeAppId && !w.isMinimized);
+    if (!active) return false;
+    if (active.snappedSide === 'top-left') return state.snapWindow(active.id, 'left');
+    if (active.snappedSide === 'top-right') return state.snapWindow(active.id, 'right');
+    if (active.isMaximized) {
+      state.toggleMaximizeWindow(active.id);
+      return true;
+    }
+    if (active.snapRestoreBounds) {
+      state.updateWindowBounds(active.id, active.snapRestoreBounds, true);
+      return true;
+    }
+    state.minimizeWindow(active.id);
+    return true;
+  },
+
+  minimizeOtherWindows: (keepId) =>
+    set((state) => {
+      const others = state.windows.filter(
+        (w) => w.id !== keepId && w.desktopId === state.activeDesktopId && !w.isMinimized,
+      );
+      if (others.length > 0) {
+        const otherIds = others.map((w) => w.id);
+        return {
+          windows: state.windows.map((w) =>
+            otherIds.includes(w.id) ? { ...w, isMinimized: true } : w,
+          ),
+          shakeRestoreIds: otherIds,
+        };
+      }
+      if (state.shakeRestoreIds.length > 0) {
+        const toRestore = new Set(state.shakeRestoreIds);
+        return {
+          windows: state.windows.map((w) =>
+            toRestore.has(w.id) ? { ...w, isMinimized: false } : w,
+          ),
+          shakeRestoreIds: [],
+        };
+      }
+      return state;
+    }),
+
+  restoreAllMinimized: () =>
+    set((state) => {
+      const nextTop = state.topZIndex + state.windows.length;
+      const restored = state.windows.map((w) =>
+        w.desktopId === state.activeDesktopId ? { ...w, isMinimized: false } : w,
+      );
+      return {
+        windows: restored,
+        activeAppId: getTopVisibleWindowId(restored, state.activeDesktopId),
+        topZIndex: nextTop,
+      };
+    }),
+
+  clampWindowsToViewport: () =>
+    set((state) => {
+      if (typeof window === 'undefined') return state;
+      const insets = getTaskbarInsets(state.taskbarSettings);
+      const desktopW = Math.max(200, window.innerWidth - insets.left - insets.right);
+      const desktopH = Math.max(160, window.innerHeight - insets.top - insets.bottom);
+      let changed = false;
+      const nextWindows = state.windows.map((w) => {
+        if (w.isMaximized) return w;
+        const nextW = Math.min(w.width, desktopW);
+        const nextH = Math.min(w.height, desktopH);
+        const nextX = Math.max(-(nextW - 80), Math.min(w.x, desktopW - 80));
+        const nextY = Math.max(0, Math.min(w.y, desktopH - 32));
+        if (nextW === w.width && nextH === w.height && nextX === w.x && nextY === w.y) {
+          return w;
+        }
+        changed = true;
+        return { ...w, x: nextX, y: nextY, width: nextW, height: nextH };
+      });
+      return changed ? { windows: nextWindows } : state;
+    }),
+
   closeWindow: (id) =>
     set((state) => {
       const updated = state.windows.filter((w) => w.id !== id);
       return {
         windows: updated,
-        ...(id === 'explorer' && { explorerReveal: null }),
+        ...(id.startsWith('explorer') && { explorerReveal: null }),
         activeAppId:
-          state.activeAppId === id ? getTopVisibleWindowId(updated) : state.activeAppId,
+          state.activeAppId === id ? getTopVisibleWindowId(updated, state.activeDesktopId) : state.activeAppId,
       };
     }),
 
@@ -1091,6 +1609,7 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
               ...w,
               ...bounds,
               snapRestoreBounds: undefined,
+              snappedSide: undefined,
               isMaximized: unmaximize ? false : w.isMaximized,
             }
           : w,
@@ -1104,10 +1623,13 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
 
   minimizeAll: () =>
     set((state) => ({
-      windows: state.windows.map((w) => ({ ...w, isMinimized: true })),
+      windows: state.windows.map((w) =>
+        w.desktopId === state.activeDesktopId ? { ...w, isMinimized: true } : w,
+      ),
       activeAppId: null,
       contextMenuPos: null,
       taskbarContextMenuPos: null,
+      winXMenuPos: null,
       isStartMenuOpen: false,
       isTaskViewOpen: false,
       isPeekingDesktop: false,
@@ -1115,35 +1637,109 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
 
   toggleShowDesktop: () =>
     set((state) => {
-      const hasVisible = state.windows.some((w) => !w.isMinimized);
+      const activeWindows = state.windows.filter((w) => w.desktopId === state.activeDesktopId);
+      const hasVisible = activeWindows.some((w) => !w.isMinimized);
       if (hasVisible) {
         return {
-          windows: state.windows.map((w) => ({ ...w, isMinimized: true })),
+          windows: state.windows.map((w) =>
+            w.desktopId === state.activeDesktopId ? { ...w, isMinimized: true } : w,
+          ),
           activeAppId: null,
           contextMenuPos: null,
           taskbarContextMenuPos: null,
+          winXMenuPos: null,
           isStartMenuOpen: false,
           isTaskViewOpen: false,
           isPeekingDesktop: false,
         };
       }
-      const nextTop = state.topZIndex + state.windows.length;
-      const restored = state.windows.map((w) => ({ ...w, isMinimized: false }));
+      const nextTop = state.topZIndex + activeWindows.length;
+      const restored = state.windows.map((w) =>
+        w.desktopId === state.activeDesktopId ? { ...w, isMinimized: false } : w,
+      );
       return {
         windows: restored,
-        activeAppId: getTopVisibleWindowId(restored),
+        activeAppId: getTopVisibleWindowId(restored, state.activeDesktopId),
         topZIndex: nextTop,
         contextMenuPos: null,
         taskbarContextMenuPos: null,
+        winXMenuPos: null,
         isStartMenuOpen: false,
         isTaskViewOpen: false,
         isPeekingDesktop: false,
       };
     }),
 
+  createVirtualDesktop: () => {
+    const state = get();
+    const num = state.virtualDesktops.length + 1;
+    const id = `desktop-${Date.now()}-${num}`;
+    set({
+      virtualDesktops: [...state.virtualDesktops, { id, name: `Desktop ${num}` }],
+    });
+    return id;
+  },
+
+  switchVirtualDesktop: (desktopId) =>
+    set((state) => {
+      if (!state.virtualDesktops.some((d) => d.id === desktopId)) return state;
+      return {
+        activeDesktopId: desktopId,
+        activeAppId: getTopVisibleWindowId(state.windows, desktopId),
+        contextMenuPos: null,
+        taskbarContextMenuPos: null,
+        winXMenuPos: null,
+        isStartMenuOpen: false,
+      };
+    }),
+
+  switchVirtualDesktopByOffset: (delta) => {
+    const state = get();
+    const idx = state.virtualDesktops.findIndex((d) => d.id === state.activeDesktopId);
+    if (idx < 0) return;
+    const nextIdx = Math.max(0, Math.min(state.virtualDesktops.length - 1, idx + delta));
+    if (nextIdx !== idx) {
+      state.switchVirtualDesktop(state.virtualDesktops[nextIdx].id);
+    }
+  },
+
+  removeVirtualDesktop: (desktopId) =>
+    set((state) => {
+      if (state.virtualDesktops.length <= 1) return state;
+      const idx = state.virtualDesktops.findIndex((d) => d.id === desktopId);
+      if (idx < 0) return state;
+      const remaining = state.virtualDesktops.filter((d) => d.id !== desktopId);
+      const fallbackId = remaining[Math.max(0, idx - 1)].id;
+      const movedWindows = state.windows.map((w) =>
+        w.desktopId === desktopId ? { ...w, desktopId: fallbackId } : w,
+      );
+      const nextActiveDesktopId =
+        state.activeDesktopId === desktopId ? fallbackId : state.activeDesktopId;
+      return {
+        virtualDesktops: remaining,
+        activeDesktopId: nextActiveDesktopId,
+        windows: movedWindows,
+        activeAppId: getTopVisibleWindowId(movedWindows, nextActiveDesktopId),
+      };
+    }),
+
+  moveWindowToDesktop: (winId, desktopId) =>
+    set((state) => {
+      const updated = state.windows.map((w) =>
+        w.id === winId ? { ...w, desktopId } : w,
+      );
+      return {
+        windows: updated,
+        activeAppId:
+          state.activeAppId === winId && desktopId !== state.activeDesktopId
+            ? getTopVisibleWindowId(updated, state.activeDesktopId)
+            : state.activeAppId,
+      };
+    }),
+
   cascadeWindows: () =>
     set((state) => {
-      const visible = state.windows.filter((w) => !w.isMinimized);
+      const visible = state.windows.filter((w) => !w.isMinimized && w.desktopId === state.activeDesktopId);
       if (visible.length === 0) return { taskbarContextMenuPos: null };
       const insets = getTaskbarInsets(state.taskbarSettings);
       const areaW = (typeof window !== 'undefined' ? window.innerWidth : 1280) - insets.left - insets.right;
@@ -1180,7 +1776,7 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
 
   stackWindows: () =>
     set((state) => {
-      const visible = state.windows.filter((w) => !w.isMinimized);
+      const visible = state.windows.filter((w) => !w.isMinimized && w.desktopId === state.activeDesktopId);
       if (visible.length === 0) return { taskbarContextMenuPos: null };
       const insets = getTaskbarInsets(state.taskbarSettings);
       const areaW = (typeof window !== 'undefined' ? window.innerWidth : 1280) - insets.left - insets.right;
@@ -1208,7 +1804,7 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
 
   sideBySideWindows: () =>
     set((state) => {
-      const visible = state.windows.filter((w) => !w.isMinimized);
+      const visible = state.windows.filter((w) => !w.isMinimized && w.desktopId === state.activeDesktopId);
       if (visible.length === 0) return { taskbarContextMenuPos: null };
       const insets = getTaskbarInsets(state.taskbarSettings);
       const areaW = (typeof window !== 'undefined' ? window.innerWidth : 1280) - insets.left - insets.right;

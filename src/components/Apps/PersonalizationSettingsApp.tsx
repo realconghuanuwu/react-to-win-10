@@ -46,6 +46,7 @@ const PRESET_THEMES = [
 ];
 
 const NAV_ITEMS: Array<{ id: PersonalizationTab; label: string }> = [
+  { id: 'Display', label: 'Display' },
   { id: 'Background', label: 'Background' },
   { id: 'Colors', label: 'Colors' },
   { id: 'Lock screen', label: 'Lock screen' },
@@ -135,6 +136,8 @@ function DesktopPreviewMockup({
 export function PersonalizationSettingsApp() {
   const personalization = useDesktopStore((state) => state.personalizationSettings);
   const activeTab = useDesktopStore((state) => state.settingsActiveTab);
+  const nightLightEnabled = useDesktopStore((state) => state.nightLightEnabled);
+  const toggleQuickSetting = useDesktopStore((state) => state.toggleQuickSetting);
   const setActiveTab = useDesktopStore((state) => state.setSettingsActiveTab);
   const updatePersonalization = useDesktopStore((state) => state.updatePersonalizationSettings);
   const closeWindow = useDesktopStore((state) => state.closeWindow);
@@ -520,6 +523,32 @@ export function PersonalizationSettingsApp() {
             >
               Close Settings
             </button>
+          </div>
+        )}
+
+        {activeTab === 'Display' && (
+          <div className="space-y-5 max-w-[540px]">
+            <h1 className="text-[28px] font-light text-white tracking-tight">Display</h1>
+            <div className="p-4 bg-[#181818] border border-white/10 space-y-3">
+              <div className="text-[14px] font-medium">Color &amp; Night light</div>
+              <p className="text-[12.5px] text-white/65">
+                Night light displays warmer colors to help reduce eye strain.
+              </p>
+              <button
+                type="button"
+                onClick={() => toggleQuickSetting('nightLightEnabled')}
+                style={nightLightEnabled ? { backgroundColor: personalization.accentColor } : undefined}
+                className={`px-4 py-1.5 text-[13px] border cursor-default ${nightLightEnabled ? 'border-white/30 text-white' : 'bg-[#333333] hover:bg-[#444444] border-white/15'}`}
+              >
+                Night light: {nightLightEnabled ? 'On' : 'Off'}
+              </button>
+            </div>
+            <div className="p-4 bg-[#181818] border border-white/10 space-y-2 text-[13px]">
+              <div className="font-medium">Display resolution</div>
+              <div className="text-white/70">
+                {typeof window !== 'undefined' ? `${window.innerWidth} × ${window.innerHeight}` : '1280 × 720'} (Current viewport)
+              </div>
+            </div>
           </div>
         )}
 

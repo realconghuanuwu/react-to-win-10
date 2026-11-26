@@ -84,7 +84,7 @@ export const DESKTOP_APPS: DesktopAppItem[] = [
   {
     id: 'paint',
     name: 'Paint',
-    icon: '/assets/icons/paint.png',
+    icon: '/assets/icons/paint.svg',
     showOnDesktop: true,
   },
   {

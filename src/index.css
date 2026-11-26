@@ -144,10 +144,17 @@
 }
 
 /* ── UniverJS Office Canvas Background Override ─────────────────────────── */
-/* Make the outer canvas area gray like real Word/Excel (the page stays white) */
-.univer-app-layout,
-.univer-app-layout > div,
-[class*="univer-layout"],
-[class*="univer-render-canvas-wrapper"] {
-  background-color: #b2b2b2 !important;
+/* Make the outer canvas area soft Word gray (#e6e6e6) around the white page */
+.word-univer-host,
+.word-univer-host .univer-app-layout,
+.word-univer-host .univer-app-layout > div,
+.word-univer-host [class*="univer-layout"],
+.word-univer-host [class*="univer-render-canvas-wrapper"],
+.word-univer-host canvas {
+  background-color: #e6e6e6 !important;
+}
+
+.excel-univer-host .univer-app-layout,
+.excel-univer-host [class*="univer-layout"] {
+  background-color: #ffffff !important;
 }

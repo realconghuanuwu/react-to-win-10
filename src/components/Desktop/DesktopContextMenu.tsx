@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { findNextFreeSlot, getTaskbarInsets, useDesktopStore } from '../../store/useDesktopStore';
+import {
+  findNextFreeSlot,
+  getTaskbarInsets,
+  useDesktopStore,
+  type DesktopSortField,
+} from '../../store/useDesktopStore';
 import { useCanPasteFiles, useFileSystemStore, type FileClipboardMode } from '../../store/useFileSystemStore';
+import { getFileTypeInfo } from '../../utils/fileTypes';
 import type { DesktopDisplayItem } from './DesktopIcon';
 
 type SubmenuKey = 'view' | 'sort' | 'new' | null;
@@ -53,6 +59,8 @@ export function DesktopContextMenu({
   const contextMenuPos = useDesktopStore((state) => state.contextMenuPos);
   const iconSize = useDesktopStore((state) => state.iconSize);
   const showDesktopIcons = useDesktopStore((state) => state.showDesktopIcons);
+  const autoArrangeIcons = useDesktopStore((state) => state.autoArrangeIcons);
+  const alignToGrid = useDesktopStore((state) => state.alignToGrid);
   const sortBy = useDesktopStore((state) => state.sortBy);
   const iconPositions = useDesktopStore((state) => state.iconPositions);
   const taskbarSettings = useDesktopStore((state) => state.taskbarSettings);
@@ -60,12 +68,16 @@ export function DesktopContextMenu({
   const triggerRefresh = useDesktopStore((state) => state.triggerRefresh);
   const setIconSize = useDesktopStore((state) => state.setIconSize);
   const toggleShowDesktopIcons = useDesktopStore((state) => state.toggleShowDesktopIcons);
-  const sortAppsByName = useDesktopStore((state) => state.sortAppsByName);
+  const setAutoArrangeIcons = useDesktopStore((state) => state.setAutoArrangeIcons);
+  const setAlignToGrid = useDesktopStore((state) => state.setAlignToGrid);
+  const sortDesktopBy = useDesktopStore((state) => state.sortDesktopBy);
   const setIconPosition = useDesktopStore((state) => state.setIconPosition);
   const setRenamingIconId = useDesktopStore((state) => state.setRenamingIconId);
   const selectedIds = useDesktopStore((state) => state.selectedIconIds);
   const setSelectedIconIds = useDesktopStore((state) => state.setSelectedIconIds);
   const openSettingsTab = useDesktopStore((state) => state.openSettingsTab);
+  const setDesktopPropertiesTargetId = useDesktopStore((state) => state.setDesktopPropertiesTargetId);
+  const setShortcutModalOpen = useDesktopStore((state) => state.setShortcutModalOpen);
 
   const nodes = useFileSystemStore((state) => state.nodes);
   const createFolder = useFileSystemStore((state) => state.createFolder);
@@ -76,6 +88,7 @@ export function DesktopContextMenu({
   const canPaste = useCanPasteFiles('desktop');
   const setFileClipboard = useFileSystemStore((state) => state.setFileClipboard);
   const pasteFiles = useFileSystemStore((state) => state.pasteFiles);
+  const pasteShortcuts = useFileSystemStore((state) => state.pasteShortcuts);
 
   const [openSubmenu, setOpenSubmenu] = useState<SubmenuKey>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -116,7 +129,7 @@ export function DesktopContextMenu({
   const insets = getTaskbarInsets(taskbarSettings);
   const vw = window.innerWidth - insets.right;
   const vh = window.innerHeight - insets.bottom;
-  const effectiveHeight = targetItem ? 180 : MENU_HEIGHT;
+  const effectiveHeight = targetItem ? 220 : MENU_HEIGHT;
   const left = Math.max(insets.left + 4, Math.min(contextMenuPos.x, vw - MENU_WIDTH - 4));
   const top = Math.max(insets.top + 4, Math.min(contextMenuPos.y, vh - effectiveHeight - 4));
   const openSubmenuLeft = left + MENU_WIDTH + 185 > vw;
@@ -150,12 +163,27 @@ export function DesktopContextMenu({
     setContextMenuPos(null);
   };
 
-  const handleCreateDesktopFolder = () => {
-    placeNewDesktopNode(createFolder('desktop'));
-  };
-
-  const handleCreateDesktopTextFile = () => {
-    placeNewDesktopNode(createTextFile('desktop'));
+  const handleSort = (field: DesktopSortField) => {
+    const sorted = [...visibleItems].sort((a, b) => {
+      if (field === 'name') return a.name.localeCompare(b.name);
+      if (field === 'size') {
+        const sizeA = nodes[a.id]?.sizeBytes ?? nodes[a.id]?.content?.length ?? 0;
+        const sizeB = nodes[b.id]?.sizeBytes ?? nodes[b.id]?.content?.length ?? 0;
+        return sizeB - sizeA || a.name.localeCompare(b.name);
+      }
+      if (field === 'type') {
+        const typeA = nodes[a.id] ? getFileTypeInfo(nodes[a.id]).label : 'Application';
+        const typeB = nodes[b.id] ? getFileTypeInfo(nodes[b.id]).label : 'Application';
+        return typeA.localeCompare(typeB) || a.name.localeCompare(b.name);
+      }
+      if (field === 'date') {
+        const modA = nodes[a.id]?.modifiedAt ?? 0;
+        const modB = nodes[b.id]?.modifiedAt ?? 0;
+        return modB - modA || a.name.localeCompare(b.name);
+      }
+      return 0;
+    });
+    sortDesktopBy(field, sorted.map((i) => i.id), maxRows);
   };
 
   if (targetItem) {
@@ -212,7 +240,7 @@ export function DesktopContextMenu({
             key={mode}
             type="button"
             role="menuitem"
-            disabled={!(isDeletableNode)}
+            disabled={!isDeletableNode}
             className={isDeletableNode ? `${rowClass} w-full` : `${disabledRowClass} w-full`}
             onClick={() => {
               setFileClipboard(mode, selectedIds.includes(targetItem.id) ? selectedIds : [targetItem.id]);
@@ -260,6 +288,20 @@ export function DesktopContextMenu({
             <span>Rename</span>
           </div>
           <span className="text-[11px] text-white/60 pr-1">F2</span>
+        </button>
+
+        <div className={dividerClass} />
+
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => setDesktopPropertiesTargetId(targetItem.id)}
+          className={`${rowClass} w-full`}
+        >
+          <div className="flex items-center">
+            <span className={gutterClass} />
+            <span>Properties</span>
+          </div>
         </button>
       </div>
     );
@@ -329,22 +371,30 @@ export function DesktopContextMenu({
               </div>
             </button>
             <div className={dividerClass} />
-            <div className={rowClass} onClick={() => setContextMenuPos(null)}>
+            <button
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={autoArrangeIcons}
+              onClick={() => setAutoArrangeIcons(!autoArrangeIcons)}
+              className={`${rowClass} w-full`}
+            >
               <div className="flex items-center">
-                <span className={gutterClass}>
-                  <CheckMark />
-                </span>
+                <span className={gutterClass}>{autoArrangeIcons && <CheckMark />}</span>
                 <span>Auto arrange icons</span>
               </div>
-            </div>
-            <div className={rowClass} onClick={() => setContextMenuPos(null)}>
+            </button>
+            <button
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={alignToGrid}
+              onClick={() => setAlignToGrid(!alignToGrid)}
+              className={`${rowClass} w-full`}
+            >
               <div className="flex items-center">
-                <span className={gutterClass}>
-                  <CheckMark />
-                </span>
+                <span className={gutterClass}>{alignToGrid && <CheckMark />}</span>
                 <span>Align icons to grid</span>
               </div>
-            </div>
+            </button>
             <div className={dividerClass} />
             <button
               type="button"
@@ -380,35 +430,28 @@ export function DesktopContextMenu({
             role="menu"
             className={`absolute top-[-4px] ${submenuPositionClass} w-[160px] bg-[#2b2b2b] border border-[#767676] shadow-[2px_4px_12px_rgba(0,0,0,0.5)] py-[3px] z-[95]`}
           >
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => sortAppsByName(visibleItems.map((i) => i.id))}
-              className={`${rowClass} w-full`}
-            >
-              <div className="flex items-center">
-                <span className={gutterClass}>{sortBy === 'name' && <RadioDot />}</span>
-                <span>Name</span>
-              </div>
-            </button>
-            <div className={rowClass} onClick={() => setContextMenuPos(null)}>
-              <div className="flex items-center">
-                <span className={gutterClass} />
-                <span>Size</span>
-              </div>
-            </div>
-            <div className={rowClass} onClick={() => setContextMenuPos(null)}>
-              <div className="flex items-center">
-                <span className={gutterClass} />
-                <span>Item type</span>
-              </div>
-            </div>
-            <div className={rowClass} onClick={() => setContextMenuPos(null)}>
-              <div className="flex items-center">
-                <span className={gutterClass} />
-                <span>Date modified</span>
-              </div>
-            </div>
+            {(
+              [
+                { id: 'name', label: 'Name' },
+                { id: 'size', label: 'Size' },
+                { id: 'type', label: 'Item type' },
+                { id: 'date', label: 'Date modified' },
+              ] as const
+            ).map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={sortBy === opt.id}
+                onClick={() => handleSort(opt.id)}
+                className={`${rowClass} w-full`}
+              >
+                <div className="flex items-center">
+                  <span className={gutterClass}>{sortBy === opt.id && <RadioDot />}</span>
+                  <span>{opt.label}</span>
+                </div>
+              </button>
+            ))}
           </div>
         )}
       </div>
@@ -447,17 +490,22 @@ export function DesktopContextMenu({
         </div>
       </button>
 
-      <div
+      <button
+        type="button"
         role="menuitem"
-        aria-disabled="true"
+        disabled={!canPaste}
         onMouseEnter={() => setOpenSubmenu(null)}
-        className={disabledRowClass}
+        className={canPaste ? `${rowClass} w-full` : `${disabledRowClass} w-full`}
+        onClick={() => {
+          pasteShortcuts('desktop');
+          setContextMenuPos(null);
+        }}
       >
         <div className="flex items-center">
           <span className={gutterClass} />
           <span>Paste shortcut</span>
         </div>
-      </div>
+      </button>
 
       <div className={dividerClass} />
 
@@ -482,7 +530,7 @@ export function DesktopContextMenu({
             <button
               type="button"
               role="menuitem"
-              onClick={handleCreateDesktopFolder}
+              onClick={() => placeNewDesktopNode(createFolder('desktop'))}
               className={`${rowClass} w-full`}
             >
               <div className="flex items-center">
@@ -496,17 +544,22 @@ export function DesktopContextMenu({
                 <span>Folder</span>
               </div>
             </button>
-            <div className={rowClass} onClick={() => setContextMenuPos(null)}>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => setShortcutModalOpen(true)}
+              className={`${rowClass} w-full`}
+            >
               <div className="flex items-center">
                 <span className={gutterClass} />
                 <span>Shortcut</span>
               </div>
-            </div>
+            </button>
             <div className={dividerClass} />
             <button
               type="button"
               role="menuitem"
-              onClick={handleCreateDesktopTextFile}
+              onClick={() => placeNewDesktopNode(createTextFile('desktop'))}
               className={`${rowClass} w-full`}
             >
               <div className="flex items-center">
@@ -531,7 +584,7 @@ export function DesktopContextMenu({
         type="button"
         role="menuitem"
         onMouseEnter={() => setOpenSubmenu(null)}
-        onClick={() => setContextMenuPos(null)}
+        onClick={() => openSettingsTab('Display')}
         className={`${rowClass} w-full`}
       >
         <div className="flex items-center">

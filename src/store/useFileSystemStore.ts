@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { FsNode, FsNodeKind } from '../db/types';
+import type { FsNode, FsNodeKind, ShortcutTarget } from '../db/types';
 import { getOwningDriveId } from '../utils/fileStorage';
 import {
   DEFAULT_IDB_QUOTA_BYTES,
@@ -195,6 +195,11 @@ interface FileClipboard {
   ids: string[];
 }
 
+interface UndoEntry {
+  label: string;
+  nodes: Record<string, FsNode>;
+}
+
 function ancestorIds(nodes: Record<string, FsNode>, id: string): Set<string> {
   const ids = new Set<string>();
   let node: FsNode | undefined = nodes[id];
@@ -225,13 +230,22 @@ function getPasteSources(
 interface FileSystemState {
   nodes: Record<string, FsNode>;
   clipboard: FileClipboard | null;
+  undoStack: UndoEntry[];
   setFileClipboard: (mode: FileClipboardMode, ids: string[]) => boolean;
   pasteFiles: (parentId: string) => boolean;
+  pasteShortcuts: (parentId: string) => boolean;
+  undo: () => boolean;
   isHydrated: boolean;
   storageUsedBytes: number;
   storageQuotaBytes: number;
   hydrate: () => Promise<void>;
   createFolder: (parentId: string, desiredName?: string) => string | null;
+  createShortcut: (
+    parentId: string,
+    name: string,
+    target: ShortcutTarget,
+    icon?: string,
+  ) => string | null;
   createTextFile: (
     parentId: string,
     desiredName?: string,
@@ -242,10 +256,13 @@ interface FileSystemState {
     fileName: string,
     blob: Blob,
   ) => Promise<string | null>;
+  importHostFiles: (parentId: string, files: FileList | File[]) => Promise<string[]>;
   updateMediaFile: (id: string, blob: Blob) => Promise<void>;
   updateFileContent: (id: string, content: string) => void;
   renameNode: (id: string, newName: string) => void;
+  moveNodes: (ids: string[], destinationId: string) => boolean;
   deleteNodes: (ids: string[]) => void;
+  deleteNodesPermanently: (ids: string[]) => void;
   restoreNodes: (ids: string[]) => void;
   emptyRecycleBin: () => void;
   refreshStorageStats: () => Promise<void>;
@@ -286,9 +303,23 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
   return {
     nodes: DEFAULT_NODES,
     clipboard: null,
+    undoStack: [],
     isHydrated: false,
     storageUsedBytes: measureNodesBytes(DEFAULT_NODES),
     storageQuotaBytes: DEFAULT_IDB_QUOTA_BYTES,
+
+    undo: () => {
+      const { undoStack } = get();
+      if (undoStack.length === 0) return false;
+      const last = undoStack[undoStack.length - 1];
+      const storageUsedBytes = persistNodes(last.nodes);
+      set({
+        nodes: last.nodes,
+        undoStack: undoStack.slice(0, -1),
+        storageUsedBytes,
+      });
+      return true;
+    },
 
     setFileClipboard: (mode, ids) => {
       const { nodes } = get();
@@ -342,7 +373,47 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
         }
       }
       const storageUsedBytes = persistNodes(nextNodes);
-      set({ nodes: nextNodes, storageUsedBytes, clipboard: clipboard.mode === 'cut' ? null : clipboard });
+      set({
+        nodes: nextNodes,
+        storageUsedBytes,
+        clipboard: clipboard.mode === 'cut' ? null : clipboard,
+        undoStack: [...get().undoStack, { label: clipboard.mode === 'cut' ? 'Move' : 'Copy', nodes }].slice(-15),
+      });
+      return true;
+    },
+
+    pasteShortcuts: (parentId) => {
+      const { nodes, clipboard } = get();
+      const parent = nodes[parentId];
+      if (!clipboard || !parent || (parent.kind !== 'folder' && parent.kind !== 'drive')) return false;
+      const nextNodes = { ...nodes };
+      const timestamp = Date.now();
+      let created = false;
+      for (const id of clipboard.ids) {
+        const src = nodes[id];
+        if (!src || ancestorIds(nodes, id).has('recycle-bin')) continue;
+        const name = getUniqueNodeName(nextNodes, parentId, `${src.name} - Shortcut`, '.lnk');
+        const newId = `shortcut-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        nextNodes[newId] = {
+          id: newId,
+          parentId,
+          name,
+          kind: 'file',
+          icon: src.icon,
+          shortcutTarget: { kind: 'node', nodeId: src.id },
+          isSystem: false,
+          createdAt: timestamp,
+          modifiedAt: timestamp,
+        };
+        created = true;
+      }
+      if (!created) return false;
+      const storageUsedBytes = persistNodes(nextNodes);
+      set({
+        nodes: nextNodes,
+        storageUsedBytes,
+        undoStack: [...get().undoStack, { label: 'Paste shortcut', nodes }].slice(-15),
+      });
       return true;
     },
 
@@ -388,8 +459,66 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
       };
 
       const storageUsedBytes = persistNodes(nextNodes);
-      set({ nodes: nextNodes, storageUsedBytes: Math.max(state.storageUsedBytes, storageUsedBytes) });
+      set({
+        nodes: nextNodes,
+        storageUsedBytes: Math.max(state.storageUsedBytes, storageUsedBytes),
+        undoStack: [...state.undoStack, { label: 'New folder', nodes: state.nodes }].slice(-15),
+      });
       return id;
+    },
+
+    createShortcut: (parentId, name, target, icon = '/assets/icons/file-explorer.png') => {
+      const state = get();
+      const parent = state.nodes[parentId];
+      if (!parent || (parent.kind !== 'folder' && parent.kind !== 'drive')) {
+        return null;
+      }
+      const trimmed = name.trim() || 'Shortcut';
+      const base = trimmed.toLowerCase().endsWith('.lnk') ? trimmed.slice(0, -4) : trimmed;
+      const finalName = getUniqueNodeName(state.nodes, parentId, base, '.lnk');
+      const id = `shortcut-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const timestamp = Date.now();
+      const nextNodes: Record<string, FsNode> = {
+        ...state.nodes,
+        [id]: {
+          id,
+          parentId,
+          name: finalName,
+          kind: 'file',
+          icon,
+          shortcutTarget: target,
+          isSystem: false,
+          createdAt: timestamp,
+          modifiedAt: timestamp,
+        },
+      };
+      const storageUsedBytes = persistNodes(nextNodes);
+      set({
+        nodes: nextNodes,
+        storageUsedBytes: Math.max(state.storageUsedBytes, storageUsedBytes),
+        undoStack: [...state.undoStack, { label: 'New shortcut', nodes: state.nodes }].slice(-15),
+      });
+      return id;
+    },
+
+    importHostFiles: async (parentId, fileList) => {
+      const files = Array.from(fileList);
+      const createdIds: string[] = [];
+      for (const file of files) {
+        const lower = file.name.toLowerCase();
+        const isText =
+          file.type.startsWith('text/') ||
+          /\.(txt|md|json|log|csv|ts|tsx|js|jsx|css|html)$/i.test(lower);
+        if (isText && file.size < 2 * 1024 * 1024) {
+          const text = await file.text();
+          const id = get().createTextFile(parentId, file.name, text);
+          if (id) createdIds.push(id);
+        } else {
+          const id = await get().createMediaFile(parentId, file.name, file);
+          if (id) createdIds.push(id);
+        }
+      }
+      return createdIds;
     },
 
     createMediaFile: async (parentId, fileName, blob) => {
@@ -513,7 +642,11 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
       };
 
       const storageUsedBytes = persistNodes(nextNodes);
-      set({ nodes: nextNodes, storageUsedBytes: Math.max(state.storageUsedBytes, storageUsedBytes) });
+      set({
+        nodes: nextNodes,
+        storageUsedBytes: Math.max(state.storageUsedBytes, storageUsedBytes),
+        undoStack: [...state.undoStack, { label: 'New text document', nodes: state.nodes }].slice(-15),
+      });
       return id;
     },
 
@@ -552,6 +685,79 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
           },
         };
         const storageUsedBytes = persistNodes(nextNodes);
+        return {
+          nodes: nextNodes,
+          storageUsedBytes,
+          undoStack: [...state.undoStack, { label: 'Rename', nodes: state.nodes }].slice(-15),
+        };
+      });
+    },
+
+    moveNodes: (ids, destinationId) => {
+      const state = get();
+      if (destinationId === 'recycle-bin') {
+        state.deleteNodes(ids);
+        return true;
+      }
+      const dest = state.nodes[destinationId];
+      if (!dest || (dest.kind !== 'folder' && dest.kind !== 'drive')) return false;
+      const destAncestors = ancestorIds(state.nodes, destinationId);
+      const nextNodes = { ...state.nodes };
+      let changed = false;
+
+      for (const id of ids) {
+        const node = nextNodes[id];
+        if (!node || node.isSystem || node.parentId === destinationId) continue;
+        if (destAncestors.has(id)) continue;
+        const dot = node.kind === 'file' ? node.name.lastIndexOf('.') : -1;
+        const base = dot > 0 ? node.name.slice(0, dot) : node.name;
+        const ext = dot > 0 ? node.name.slice(dot) : '';
+        const name = getUniqueNodeName(nextNodes, destinationId, base, ext);
+        nextNodes[id] = {
+          ...node,
+          name,
+          parentId: destinationId,
+          modifiedAt: Date.now(),
+        };
+        changed = true;
+      }
+
+      if (!changed) return false;
+      const storageUsedBytes = persistNodes(nextNodes);
+      set({
+        nodes: nextNodes,
+        storageUsedBytes,
+        undoStack: [...state.undoStack, { label: 'Move', nodes: state.nodes }].slice(-15),
+      });
+      return true;
+    },
+
+    deleteNodesPermanently: (ids) => {
+      set((state) => {
+        const nextNodes = { ...state.nodes };
+        const removedIds = new Set<string>();
+        const collectDescendants = (rootId: string): string[] => {
+          const result = [rootId];
+          Object.values(nextNodes).forEach((node) => {
+            if (node.parentId === rootId) {
+              result.push(...collectDescendants(node.id));
+            }
+          });
+          return result;
+        };
+
+        let changed = false;
+        for (const id of ids) {
+          const target = nextNodes[id];
+          if (!target || target.isSystem) continue;
+          changed = true;
+          for (const descId of collectDescendants(id)) {
+            removedIds.add(descId);
+            delete nextNodes[descId];
+          }
+        }
+        if (!changed) return state;
+        const storageUsedBytes = persistNodes(nextNodes, removedIds);
         return { nodes: nextNodes, storageUsedBytes };
       });
     },
@@ -593,7 +799,14 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
 
         if (!changed) return state;
         const storageUsedBytes = persistNodes(nextNodes, removedIds);
-        return { nodes: nextNodes, storageUsedBytes };
+        const shouldPushUndo = ids.some((id) => state.nodes[id]?.parentId !== 'recycle-bin');
+        return {
+          nodes: nextNodes,
+          storageUsedBytes,
+          undoStack: shouldPushUndo
+            ? [...state.undoStack, { label: 'Delete', nodes: state.nodes }].slice(-15)
+            : state.undoStack,
+        };
       });
     },
 
@@ -619,7 +832,11 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
         }
         if (!changed) return state;
         const storageUsedBytes = persistNodes(nextNodes);
-        return { nodes: nextNodes, storageUsedBytes };
+        return {
+          nodes: nextNodes,
+          storageUsedBytes,
+          undoStack: [...state.undoStack, { label: 'Restore', nodes: state.nodes }].slice(-15),
+        };
       });
     },
 

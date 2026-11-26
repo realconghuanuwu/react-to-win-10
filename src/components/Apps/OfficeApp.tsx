@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { createUniver, LocaleType, mergeLocales, type IDocumentData, type IWorkbookData } from '@univerjs/presets';
+import { createUniver, DocumentFlavor, LocaleType, mergeLocales, type IDocumentData, type IWorkbookData } from '@univerjs/presets';
 import { UniverDocsCorePreset } from '@univerjs/preset-docs-core';
 import UniverPresetDocsCoreEnUS from '@univerjs/preset-docs-core/locales/en-US';
 import { UniverSheetsCorePreset } from '@univerjs/preset-sheets-core';
@@ -10,6 +10,8 @@ import { useDesktopStore } from '../../store/useDesktopStore';
 import { useFileSystemStore, waitForFileSystemWrite } from '../../store/useFileSystemStore';
 import { notify } from '../../store/useNotificationStore';
 import { OfficeHomeScreen } from './OfficeHomeScreen';
+import { ExcelRibbon } from './ExcelRibbon';
+import { WordRibbon } from './WordRibbon';
 
 export type OfficeMode = 'word' | 'excel';
 
@@ -60,7 +62,6 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
   const officeExtension = mode === 'word' ? '.docx' : '.xlsx';
   const defaultTitle = mode === 'word' ? DEFAULT_DOC_TITLE : DEFAULT_SHEET_TITLE;
   const brandColor = mode === 'word' ? '#2b579a' : '#107c41';
-  const brandHover = mode === 'word' ? 'hover:bg-[#1a3c70]' : 'hover:bg-[#0c6434]';
   const appLabel = mode === 'word' ? 'Word' : 'Excel';
 
   // Both Word and Excel show home screen on first open
@@ -74,6 +75,7 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
   const [importError, setImportError] = useState('');
   const [exporting, setExporting] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [officeUniverApi, setOfficeUniverApi] = useState<ReturnType<typeof createUniver>['univerAPI'] | null>(null);
   const notificationSource = mode === 'word' ? 'Word' : 'Excel';
 
   useEffect(() => () => { importRequest.current++; }, []);
@@ -134,36 +136,56 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
         ? createUniver({
             locale: LocaleType.EN_US,
             locales: { [LocaleType.EN_US]: mergeLocales(UniverPresetDocsCoreEnUS) },
-            presets: [UniverDocsCorePreset({ container })],
+            presets: [
+              UniverDocsCorePreset({
+                container,
+                header: false,
+                toolbar: false,
+              }),
+            ],
           })
         : createUniver({
             locale: LocaleType.EN_US,
             locales: { [LocaleType.EN_US]: mergeLocales(UniverPresetSheetsCoreEnUS) },
-            presets: [UniverSheetsCorePreset({ container })],
+            presets: [
+              UniverSheetsCorePreset({
+                container,
+                header: false,
+                toolbar: false,
+                formulaBar: false,
+              }),
+            ],
           });
 
     univerApiRef.current = univerAPI;
+    setOfficeUniverApi(univerAPI);
 
-    // Apply gray canvas background (like real Word/Excel) after UniverJS mounts
+    // Apply Microsoft Word workspace gray (#e6e6e6) around the white page
     const applyCanvasBg = () => {
-      // UniverJS wraps canvas in a div with overflow:hidden – set bg on that wrapper
+      if (mode === 'excel') return;
+      const wordGray = '#e6e6e6';
+      container.style.backgroundColor = wordGray;
+      container.style.setProperty('--univer-gray-100', wordGray);
+      container.style.setProperty('--univer-gray-0', wordGray);
       const canvasEl = container.querySelector<HTMLElement>('canvas');
-      if (canvasEl?.parentElement) {
-        canvasEl.parentElement.style.backgroundColor = '#b2b2b2';
+      if (canvasEl) {
+        if (canvasEl.style.backgroundColor !== wordGray) {
+          canvasEl.style.backgroundColor = wordGray;
+        }
+        if (canvasEl.parentElement) {
+          canvasEl.parentElement.style.backgroundColor = wordGray;
+        }
       }
-      // Also set on the top-level scrollable area inside container
       const scrollArea = container.querySelector<HTMLElement>('[class*="viewport"], [class*="canvas-container"], [class*="scroll"]');
-      if (scrollArea) scrollArea.style.backgroundColor = '#b2b2b2';
-      // Set on container root itself
-      container.style.backgroundColor = '#b2b2b2';
+      if (scrollArea) scrollArea.style.backgroundColor = wordGray;
     };
     // Try immediately and after a short delay (UniverJS renders asynchronously)
     applyCanvasBg();
     const bgTimer = window.setTimeout(applyCanvasBg, 300);
-    // Also watch DOM mutations in case UniverJS injects canvas later
+    // Also watch DOM mutations in case UniverJS injects or restyles canvas later
     const bgObserver = new MutationObserver(applyCanvasBg);
-    bgObserver.observe(container, { childList: true, subtree: true });
-    const stopObserver = window.setTimeout(() => bgObserver.disconnect(), 3000);
+    bgObserver.observe(container, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
+    const stopObserver = window.setTimeout(() => bgObserver.disconnect(), 4000);
 
     // Load saved snapshot or create fresh document
     let parsedSnapshot = importedSnapshot.current;
@@ -187,6 +209,9 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
         univerAPI.createDocument({
           id: `doc-${Date.now()}`,
           title: documentTitle,
+          documentStyle: {
+            documentFlavor: DocumentFlavor.TRADITIONAL,
+          },
         });
       }
     } else {
@@ -202,6 +227,7 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
       window.clearTimeout(stopObserver);
       bgObserver.disconnect();
       univerApiRef.current = null;
+      setOfficeUniverApi(null);
       queueMicrotask(() => {
         univer.dispose();
         container.remove();
@@ -374,88 +400,61 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
         <OfficeHomeScreen mode={mode} recentFiles={savedOfficeFiles} onNewBlank={handleNew}
           onOpenFile={handleOpenSavedFile} onOpenFromPc={showOpen} />
       ) : <>
-      {/* Office Top Action Bar */}
-      <div
-        style={{ backgroundColor: brandColor }}
-        className="h-9 px-3 flex items-center justify-between text-white text-[12px] shrink-0 border-b border-black/15"
-      >
-        <div className="flex items-center gap-2 min-w-0">
-          {/* Back to Home (Word & Excel) */}
-          <button
-            type="button"
-            onClick={() => setView('home')}
-            title={`Back to ${appLabel} Home`}
-            className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] transition-colors cursor-default ${brandHover}`}
-          >
-            <svg viewBox="0 0 10 10" width="10" height="10" fill="currentColor" aria-hidden="true">
-              <path d="M6.5 1.5l-4 3.5 4 3.5" stroke="currentColor" strokeWidth="1.2" fill="none" strokeLinecap="round" />
-            </svg>
-            Home
-          </button>
-          <img
-            src={mode === 'word' ? '/assets/icons/word.svg' : '/assets/icons/excel.svg'}
-            alt=""
-            className="w-4 h-4 object-contain shrink-0"
-          />
-          <span className="font-semibold tracking-tight">{appLabel}</span>
-          <span className="text-white/50">|</span>
-          <span className="truncate max-w-[200px] text-white/95 font-normal">
-            {documentTitle}
-          </span>
-          {statusMessage && (
-            <span role="status" className="ml-2 px-2 py-0.5 rounded bg-black/20 text-[11px] text-white/90 truncate">
-              {statusMessage}
-            </span>
-          )}
-        </div>
+      {mode === 'excel' ? (
+        <ExcelRibbon
+          univerApi={officeUniverApi}
+          documentTitle={documentTitle}
+          statusMessage={statusMessage}
+          saving={saving}
+          exporting={exporting}
+          onBackHome={() => setView('home')}
+          onNew={handleNew}
+          onOpen={showOpen}
+          onSaveToWin10={handleSaveToWin10}
+          onSaveToLocal={handleSaveToLocal}
+          onSwitchToWord={() => openApp('word')}
+          onStatus={setStatusMessage}
+        />
+      ) : (
+        <WordRibbon
+          univerApi={officeUniverApi}
+          documentTitle={documentTitle}
+          statusMessage={statusMessage}
+          saving={saving}
+          exporting={exporting}
+          onBackHome={() => setView('home')}
+          onNew={handleNew}
+          onOpen={showOpen}
+          onSaveToWin10={handleSaveToWin10}
+          onSaveToLocal={handleSaveToLocal}
+          onSwitchToExcel={() => openApp('excel')}
+          onStatus={setStatusMessage}
+        />
+      )}
 
-        <div className="flex items-center gap-1 shrink-0">
-          <button
-            type="button"
-            onClick={handleNew}
-            className={`px-2.5 py-1 rounded text-[12px] transition-colors cursor-default ${brandHover}`}
+      {/* Editor Canvas + Optional Word Vertical Ruler */}
+      <div className={`flex-1 min-h-0 w-full flex overflow-hidden ${mode === 'word' ? 'bg-[#e6e6e6]' : 'bg-white'}`}>
+        {mode === 'word' && (
+          <div
+            aria-hidden="true"
+            className="hidden sm:flex w-[18px] bg-[#e6e6e6] flex-col items-center py-6 shrink-0 select-none"
           >
-            New
-          </button>
-          <button
-            type="button"
-            onClick={showOpen}
-            className={`px-2.5 py-1 rounded text-[12px] transition-colors cursor-default ${brandHover}`}
-          >
-            Open
-          </button>
-          <button
-            type="button"
-            onClick={handleSaveToWin10}
-            disabled={saving}
-            className={`px-2.5 py-1 rounded text-[12px] font-medium bg-white/15 transition-colors cursor-default ${brandHover}`}
-          >
-            {saving ? 'Saving…' : 'Save to Win 10'}
-          </button>
-          <button
-            type="button"
-            onClick={handleSaveToLocal}
-            disabled={exporting}
-            className={`px-2.5 py-1 rounded text-[12px] font-medium bg-white/15 transition-colors cursor-default ${brandHover}`}
-          >
-            {exporting ? 'Exporting…' : `Save ${officeExtension} to PC`}
-          </button>
-          <span className="mx-1 h-4 w-[1px] bg-white/25" />
-          <button
-            type="button"
-            onClick={() => openApp(mode === 'word' ? 'excel' : 'word')}
-            className={`px-2.5 py-1 rounded text-[12px] transition-colors cursor-default ${brandHover}`}
-          >
-            Open {mode === 'word' ? 'Excel' : 'Word'}
-          </button>
-        </div>
+            <div className="w-[10px] flex-1 max-h-[540px] flex flex-col border-x border-[#b3b0ad] overflow-hidden">
+              <div className="h-[54px] bg-[#c8c6c4] border-b border-[#b3b0ad]" />
+              <div className="flex-1 bg-white flex flex-col justify-between py-2 items-center text-[7.5px] text-[#595959]">
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
+                  <span key={n} className="leading-none">{n}</span>
+                ))}
+              </div>
+              <div className="h-[54px] bg-[#c8c6c4] border-t border-[#b3b0ad]" />
+            </div>
+          </div>
+        )}
+        <div
+          ref={containerRef}
+          className={`flex-1 min-w-0 min-h-0 h-full relative overflow-hidden ${mode === 'excel' ? 'bg-white excel-univer-host' : 'bg-[#e6e6e6] word-univer-host'}`}
+        />
       </div>
-
-      {/* UniverJS Mount Container */}
-      <div
-        ref={containerRef}
-        className="flex-1 min-h-0 w-full relative overflow-hidden bg-[#b2b2b2]"
-      />
       </>}
 
       {/* Open Saved File Modal */}

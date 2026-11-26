@@ -4,6 +4,7 @@ import { BootScreen } from './components/Boot/BootScreen';
 import { Desktop } from './components/Desktop/Desktop';
 import { Taskbar } from './components/Taskbar/Taskbar';
 import { WindowManager } from './components/Window/WindowManager';
+import { SystemOverlays } from './components/System/SystemOverlays';
 import { win10Theme } from './theme/win10Theme';
 
 export function App() {
@@ -27,6 +28,7 @@ export function App() {
         <Desktop />
         <WindowManager />
         <Taskbar />
+        <SystemOverlays />
         <BootScreen />
       </main>
     </FluentProvider>

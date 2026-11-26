@@ -48,6 +48,8 @@ interface SearchResult {
 export function TaskbarSearch({ placement, iconClass, onFocusChange }: TaskbarSearchProps) {
   const apps = useDesktopStore((state) => state.apps);
   const pinnedIds = useDesktopStore((state) => state.taskbarSettings.pinnedAppIds);
+  const isSearchOpen = useDesktopStore((state) => state.isSearchOpen);
+  const setSearchOpen = useDesktopStore((state) => state.setSearchOpen);
   const openApp = useDesktopStore((state) => state.openApp);
   const closeStartMenu = useDesktopStore((state) => state.closeStartMenu);
   const nodes = useFileSystemStore((state) => state.nodes);
@@ -61,6 +63,15 @@ export function TaskbarSearch({ placement, iconClass, onFocusChange }: TaskbarSe
   const iconMode = Boolean(iconClass);
   const query = normalize(text.trim());
   useEffect(() => () => onFocusChange(false), [onFocusChange]);
+
+  useEffect(() => {
+    if (isSearchOpen) {
+      setFocused(true);
+      onFocusChange(true);
+      window.setTimeout(() => input.current?.focus(), 0);
+    }
+  }, [isSearchOpen, onFocusChange]);
+
   const fileResults = useMemo(() => Object.values(nodes).flatMap((file) => {
     if (file.kind !== 'file' || !file.parentId) return [];
     const location = getFileLocation(file, nodes);
@@ -100,6 +111,7 @@ export function TaskbarSearch({ placement, iconClass, onFocusChange }: TaskbarSe
 
   const close = () => {
     setFocused(false);
+    setSearchOpen(false);
     onFocusChange(false);
   };
 
@@ -219,7 +231,7 @@ export function TaskbarSearch({ placement, iconClass, onFocusChange }: TaskbarSe
       }}
       onKeyDown={(event) => {
         if (!iconMode && event.key === 'Escape') {
-          input.current?.focus();
+          input.current?.blur();
           close();
         }
       }}
@@ -258,6 +270,7 @@ export function TaskbarSearch({ placement, iconClass, onFocusChange }: TaskbarSe
       onOpenChange={(_event, data) => {
         if (data.open) closeStartMenu();
         setFocused(data.open);
+        if (!data.open) setSearchOpen(false);
         onFocusChange(data.open);
       }}>
       <PopoverTrigger disableButtonEnhancement>

@@ -1,5 +1,12 @@
 export type FsNodeKind = 'root' | 'drive' | 'folder' | 'file' | 'bin';
 
+export interface ShortcutTarget {
+  kind: 'app' | 'url' | 'node';
+  appId?: string;
+  url?: string;
+  nodeId?: string;
+}
+
 export interface FsNode {
   id: string;
   parentId: string | null;
@@ -10,6 +17,7 @@ export interface FsNode {
   mimeType?: string;
   sizeBytes?: number;
   blobId?: string;
+  shortcutTarget?: ShortcutTarget;
   isSystem?: boolean;
   createdAt: number;
   modifiedAt: number;
@@ -60,6 +68,7 @@ export interface TaskbarSettings {
 }
 
 export type PersonalizationTab =
+  | 'Display'
   | 'Background'
   | 'Colors'
   | 'Lock screen'

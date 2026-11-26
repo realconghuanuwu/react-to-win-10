@@ -52,18 +52,21 @@ export function WindowFrame({ win, onSnapPreview, onSnapDrop }: WindowFrameProps
   const toggleMaximizeWindow = useDesktopStore((state) => state.toggleMaximizeWindow);
   const closeWindow = useDesktopStore((state) => state.closeWindow);
   const updateWindowBounds = useDesktopStore((state) => state.updateWindowBounds);
+  const minimizeOtherWindows = useDesktopStore((state) => state.minimizeOtherWindows);
+  const setTitlebarMenuState = useDesktopStore((state) => state.setTitlebarMenuState);
 
+  const appId = win.appId ?? win.id;
   const isActive = activeAppId === win.id;
   const isExplorerApp =
-    win.id === 'explorer' || win.id === 'this-pc' || win.id === 'recycle-bin';
+    appId === 'explorer' || appId === 'this-pc' || appId === 'recycle-bin';
   const isDarkApp =
-    win.id === 'calculator' ||
-    win.id === 'code-studio' ||
+    appId === 'calculator' ||
+    appId === 'code-studio' ||
     isExplorerApp ||
-    win.id === 'settings' ||
-    win.id === 'yt-downloader' ||
-    win.id === 'pdf-tool' ||
-    win.id === 'media-player';
+    appId === 'settings' ||
+    appId === 'yt-downloader' ||
+    appId === 'pdf-tool' ||
+    appId === 'media-player';
   const handleTitleBarPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
     if ((e.target as Element).closest('[data-window-control="true"]')) return;
@@ -79,15 +82,30 @@ export function WindowFrame({ win, onSnapPreview, onSnapDrop }: WindowFrameProps
     const shouldRestore = win.isMaximized || !!win.snapRestoreBounds;
     let dragging = false;
     let previewSide: SnapSide | null = null;
+    let lastX = startClientX;
+    let lastDir = 0;
+    let reversals = 0;
+    let shakeWindowStart = Date.now();
+    let shakeTriggered = false;
 
     const getSnapSide = ({ clientX, clientY, pointerType }: PointerEvent): SnapSide | null => {
       if (pointerType !== 'mouse') return null;
       const insets = getTaskbarInsets(useDesktopStore.getState().taskbarSettings);
-      if (clientY < insets.top || clientY >= window.innerHeight - insets.bottom) return null;
-      const leftDistance = clientX - insets.left;
-      const rightDistance = window.innerWidth - insets.right - clientX;
-      if (Math.min(leftDistance, rightDistance) > SNAP_EDGE_DISTANCE) return null;
-      return leftDistance <= rightDistance ? 'left' : 'right';
+      const topDist = clientY - insets.top;
+      const bottomDist = window.innerHeight - insets.bottom - clientY;
+      const leftDist = clientX - insets.left;
+      const rightDist = window.innerWidth - insets.right - clientX;
+      if (topDist < 0 || bottomDist < 0 || leftDist < 0 || rightDist < 0) return null;
+
+      const CORNER_DIST = 28;
+      if (leftDist <= CORNER_DIST && topDist <= CORNER_DIST) return 'top-left';
+      if (rightDist <= CORNER_DIST && topDist <= CORNER_DIST) return 'top-right';
+      if (leftDist <= CORNER_DIST && bottomDist <= CORNER_DIST) return 'bottom-left';
+      if (rightDist <= CORNER_DIST && bottomDist <= CORNER_DIST) return 'bottom-right';
+      if (topDist <= SNAP_EDGE_DISTANCE) return 'top';
+      if (leftDist <= SNAP_EDGE_DISTANCE) return 'left';
+      if (rightDist <= SNAP_EDGE_DISTANCE) return 'right';
+      return null;
     };
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
@@ -97,6 +115,27 @@ export function WindowFrame({ win, onSnapPreview, onSnapDrop }: WindowFrameProps
 
       if (!dragging && Math.hypot(dx, dy) < 4) return;
       dragging = true;
+
+      // Aero Shake detection
+      const stepDx = moveEvent.clientX - lastX;
+      if (Math.abs(stepDx) >= 16) {
+        const dir = stepDx > 0 ? 1 : -1;
+        const now = Date.now();
+        if (now - shakeWindowStart > 750) {
+          reversals = 0;
+          shakeWindowStart = now;
+        }
+        if (lastDir !== 0 && dir !== lastDir) {
+          reversals += 1;
+          if (reversals >= 4 && !shakeTriggered) {
+            shakeTriggered = true;
+            minimizeOtherWindows(win.id);
+          }
+        }
+        lastDir = dir;
+        lastX = moveEvent.clientX;
+      }
+
       const nextSide = getSnapSide(moveEvent);
       if (nextSide !== previewSide) {
         previewSide = nextSide;
@@ -269,6 +308,12 @@ export function WindowFrame({ win, onSnapPreview, onSnapDrop }: WindowFrameProps
         data-window-titlebar="true"
         onPointerDown={handleTitleBarPointerDown}
         onDoubleClick={() => toggleMaximizeWindow(win.id)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          focusWindow(win.id);
+          setTitlebarMenuState({ windowId: win.id, x: e.clientX, y: e.clientY });
+        }}
         className={[
           'flex items-center justify-between h-[32px] shrink-0 pl-3 pr-0',
           isDarkApp
@@ -284,12 +329,12 @@ export function WindowFrame({ win, onSnapPreview, onSnapDrop }: WindowFrameProps
       >
         <div className="flex items-center gap-2 min-w-0 pr-2">
           {(isDarkApp ||
-            win.id === 'notepad' ||
-            win.id === 'paint' ||
-            win.id === 'task-manager' ||
-            win.id === 'chrome' ||
-            win.id === 'word' ||
-            win.id === 'excel') && (
+            appId === 'notepad' ||
+            appId === 'paint' ||
+            appId === 'task-manager' ||
+            appId === 'chrome' ||
+            appId === 'word' ||
+            appId === 'excel') && (
             <img
               src={win.icon}
               alt=""
@@ -356,40 +401,40 @@ export function WindowFrame({ win, onSnapPreview, onSnapDrop }: WindowFrameProps
         </div>
       </header>
 
-      {win.id === 'calculator' ? (
+      {appId === 'calculator' ? (
         <CalculatorApp isActive={isActive} />
-      ) : win.id === 'chrome' ? (
+      ) : appId === 'chrome' ? (
         <ChromeApp windowId={win.id} />
-      ) : win.id === 'notepad' ? (
+      ) : appId === 'notepad' ? (
         <NotepadApp windowId={win.id} />
-      ) : win.id === 'paint' ? (
+      ) : appId === 'paint' ? (
         <PaintApp windowId={win.id} />
-      ) : win.id === 'code-studio' ? (
+      ) : appId === 'code-studio' ? (
         <Suspense fallback={<div className="grid flex-1 place-items-center text-sm text-white">Loading editor…</div>}>
           <CodeStudioApp />
         </Suspense>
-      ) : win.id === 'word' || win.id === 'excel' ? (
+      ) : appId === 'word' || appId === 'excel' ? (
         <Suspense
           fallback={
             <div className="flex-1 flex flex-col items-center justify-center bg-[#f3f2f1] text-[#323130] gap-3">
               <img src={win.icon} alt="" className="w-12 h-12 object-contain" />
               <span className="text-[13px] font-medium">
-                Starting Microsoft {win.id === 'word' ? 'Word' : 'Excel'}...
+                Starting Microsoft {appId === 'word' ? 'Word' : 'Excel'}...
               </span>
             </div>
           }
         >
-          <OfficeApp mode={win.id} windowId={win.id} />
+          <OfficeApp mode={appId} windowId={win.id} />
         </Suspense>
-      ) : win.id === 'settings' ? (
+      ) : appId === 'settings' ? (
         <PersonalizationSettingsApp />
-      ) : win.id === 'task-manager' ? (
+      ) : appId === 'task-manager' ? (
         <TaskManagerApp />
-      ) : win.id === 'yt-downloader' ? (
+      ) : appId === 'yt-downloader' ? (
         <YouTubeDownloaderApp />
-      ) : win.id === 'media-player' ? (
+      ) : appId === 'media-player' ? (
         <MediaPlayerApp windowId={win.id} />
-      ) : win.id === 'pdf-tool' ? (
+      ) : appId === 'pdf-tool' ? (
         <Suspense fallback={<div className="grid flex-1 place-items-center text-sm text-white">Opening PDF Tool…</div>}>
           <PdfToolApp />
         </Suspense>
@@ -397,9 +442,9 @@ export function WindowFrame({ win, onSnapPreview, onSnapDrop }: WindowFrameProps
         <FileExplorerApp
           windowId={win.id}
           initialFolderId={
-            win.id === 'recycle-bin'
+            appId === 'recycle-bin'
               ? 'recycle-bin'
-              : win.id === 'explorer'
+              : appId === 'explorer'
                 ? explorerStartFolderId
                 : 'this-pc'
           }

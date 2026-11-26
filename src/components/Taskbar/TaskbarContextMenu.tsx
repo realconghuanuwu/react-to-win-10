@@ -120,9 +120,13 @@ export function TaskbarContextMenu() {
     const app = apps.find((a) => a.id === pos.appId);
     if (!app) return null;
     const isPinned = settings.pinnedAppIds.includes(app.id);
-    const isOpen = windows.some((w) => w.id === app.id);
+    const activeDesktopId = useDesktopStore.getState().activeDesktopId;
+    const matchingWindows = windows.filter(
+      (w) => (w.appId ?? w.id) === app.id && w.desktopId === activeDesktopId,
+    );
+    const isOpen = matchingWindows.length > 0;
     const menuW = 216;
-    const menuH = isOpen ? 104 : 74;
+    const menuH = isOpen ? 132 : 102;
     const left = Math.max(4, Math.min(pos.x, vw - menuW - 4));
     const top = Math.max(4, Math.min(pos.y - menuH, vh - menuH - 4));
 
@@ -155,6 +159,21 @@ export function TaskbarContextMenu() {
         <button
           type="button"
           role="menuitem"
+          onClick={() => {
+            openApp(app.id, undefined, undefined, true);
+            setTaskbarContextMenuPos(null);
+          }}
+          className={rowClass}
+        >
+          <div className="flex items-center">
+            <span className={gutterClass} />
+            <span>Open new window</span>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          role="menuitem"
           onClick={() => togglePinToTaskbar(app.id)}
           className={rowClass}
         >
@@ -169,14 +188,14 @@ export function TaskbarContextMenu() {
             type="button"
             role="menuitem"
             onClick={() => {
-              closeWindow(app.id);
+              matchingWindows.forEach((w) => closeWindow(w.id));
               setTaskbarContextMenuPos(null);
             }}
             className={rowClass}
           >
             <div className="flex items-center">
               <span className={gutterClass} />
-              <span>Close window</span>
+              <span>{matchingWindows.length > 1 ? 'Close all windows' : 'Close window'}</span>
             </div>
           </button>
         )}

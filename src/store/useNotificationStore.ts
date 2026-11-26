@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 
-type NotificationTarget = { appId: string } | { fileId: string; folderId: string };
+export type NotificationTarget = { appId: string } | { fileId: string; folderId: string };
 
-interface NotificationInput {
+export interface NotificationInput {
   source: string;
   title: string;
   message: string;
@@ -10,7 +10,7 @@ interface NotificationInput {
   target?: NotificationTarget;
 }
 
-interface DesktopNotification extends NotificationInput {
+export interface DesktopNotification extends NotificationInput {
   id: number;
   createdAt: number;
   unread: boolean;
@@ -18,9 +18,11 @@ interface DesktopNotification extends NotificationInput {
 
 interface NotificationState {
   items: DesktopNotification[];
+  toasts: DesktopNotification[];
   add: (input: NotificationInput) => void;
   markRead: () => void;
   dismiss: (id: number) => void;
+  dismissToast: (id: number) => void;
   clear: () => void;
 }
 
@@ -28,14 +30,33 @@ let nextId = 0;
 
 export const useNotificationStore = create<NotificationState>((set) => ({
   items: [],
-  add: (input) => set((state) => ({
-    items: [{ ...input, id: ++nextId, createdAt: Date.now(), unread: true }, ...state.items].slice(0, 50),
-  })),
-  markRead: () => set((state) => ({
-    items: state.items.map((item) => item.unread ? { ...item, unread: false } : item),
-  })),
-  dismiss: (id) => set((state) => ({ items: state.items.filter((item) => item.id !== id) })),
-  clear: () => set({ items: [] }),
+  toasts: [],
+  add: (input) => {
+    const entry: DesktopNotification = {
+      ...input,
+      id: ++nextId,
+      createdAt: Date.now(),
+      unread: true,
+    };
+    set((state) => ({
+      items: [entry, ...state.items].slice(0, 50),
+      toasts: [entry, ...state.toasts].slice(0, 3),
+    }));
+  },
+  markRead: () =>
+    set((state) => ({
+      items: state.items.map((item) => (item.unread ? { ...item, unread: false } : item)),
+    })),
+  dismiss: (id) =>
+    set((state) => ({
+      items: state.items.filter((item) => item.id !== id),
+      toasts: state.toasts.filter((item) => item.id !== id),
+    })),
+  dismissToast: (id) =>
+    set((state) => ({
+      toasts: state.toasts.filter((item) => item.id !== id),
+    })),
+  clear: () => set({ items: [], toasts: [] }),
 }));
 
 export function notify(input: NotificationInput) {
