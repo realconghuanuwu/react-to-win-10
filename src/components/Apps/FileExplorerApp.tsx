@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { useHotkeys } from 'react-hotkeys-hook';
 import { useDesktopStore } from '../../store/useDesktopStore';
 import {
   QUICK_ACCESS_IDS,
@@ -7,7 +8,7 @@ import {
   type FsNode,
 } from '../../store/useFileSystemStore';
 import { getFileTypeInfo } from '../../utils/fileTypes';
-import { handleFileClipboardShortcut } from '../../utils/fileClipboardShortcuts';
+import { getDriveUsageBytes } from '../../utils/fileStorage';
 import { openVirtualFile } from '../../utils/openVirtualFile';
 import {
   ExplorerContextMenu,
@@ -35,6 +36,8 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
   const createTextFile = useFileSystemStore((state) => state.createTextFile);
   const renameNode = useFileSystemStore((state) => state.renameNode);
   const clipboard = useFileSystemStore((state) => state.clipboard);
+  const setFileClipboard = useFileSystemStore((state) => state.setFileClipboard);
+  const pasteFiles = useFileSystemStore((state) => state.pasteFiles);
   const deleteNodes = useFileSystemStore((state) => state.deleteNodes);
   const restoreNodes = useFileSystemStore((state) => state.restoreNodes);
   const emptyRecycleBin = useFileSystemStore((state) => state.emptyRecycleBin);
@@ -63,6 +66,7 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
     }
   }, [windowId, explorerStartFolderId, explorerReveal]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const selectionAnchor = useRef<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -193,40 +197,13 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
       }
     };
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (activeAppId !== windowId) return;
-      const tag = (e.target as HTMLElement | null)?.tagName;
-      const isEditingText = tag === 'INPUT' || tag === 'TEXTAREA';
-
-      const desktop = useDesktopStore.getState();
-      if (!desktop.isStartMenuOpen && !desktop.isTaskViewOpen &&
-        (e.target === document.body || isThisExplorerTarget(e.target)) &&
-        handleFileClipboardShortcut(e, selectedIds, currentFolderId)) return;
-
-      if ((e.altKey && e.key === 'ArrowLeft') || e.key === 'BrowserBack') {
-        e.preventDefault();
-        goBack();
-      } else if ((e.altKey && e.key === 'ArrowRight') || e.key === 'BrowserForward') {
-        e.preventDefault();
-        goForward();
-      } else if (e.altKey && e.key === 'ArrowUp') {
-        e.preventDefault();
-        goUp();
-      } else if (e.key === 'Backspace' && !isEditingText) {
-        e.preventDefault();
-        goBack();
-      }
-    };
-
     window.addEventListener('mousedown', handleMouseDown);
     window.addEventListener('mouseup', handleMouseUp);
-    window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('mousedown', handleMouseDown);
       window.removeEventListener('mouseup', handleMouseUp);
-      window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [activeAppId, windowId, goBack, goForward, goUp, selectedIds, currentFolderId]);
+  }, [activeAppId, windowId, goBack, goForward]);
 
   const breadcrumbs = useMemo(() => {
     const chain: FsNode[] = [];
@@ -297,6 +274,37 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
     () => currentChildren.filter((item) => item.kind === 'drive'),
     [currentChildren],
   );
+  const visibleIds = useMemo(() => (
+    currentFolderId === 'this-pc'
+      ? [...(foldersCollapsed ? [] : thisPcFolders), ...(drivesCollapsed ? [] : thisPcDrives)]
+      : currentChildren
+  ).map((item) => item.id), [
+    currentFolderId, foldersCollapsed, thisPcFolders, drivesCollapsed, thisPcDrives, currentChildren,
+  ]);
+
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const visibleSelectedIds = useMemo(
+    () => visibleIds.filter((id) => selectedSet.has(id)),
+    [selectedSet, visibleIds],
+  );
+
+  const selectItem = (id: string, event: MouseEvent) => {
+    const additive = event.ctrlKey || event.metaKey;
+    const anchor = visibleSelectedIds.length
+      ? selectionAnchor.current ?? visibleSelectedIds[0]
+      : null;
+    const from = anchor ? visibleIds.indexOf(anchor) : -1;
+    if (event.shiftKey && from >= 0) {
+      const to = visibleIds.indexOf(id);
+      const range = visibleIds.slice(Math.min(from, to), Math.max(from, to) + 1);
+      setSelectedIds(additive ? [...new Set([...visibleSelectedIds, ...range])] : range);
+      return;
+    }
+    selectionAnchor.current = id;
+    setSelectedIds(additive
+      ? visibleSelectedIds.includes(id) ? visibleSelectedIds.filter((item) => item !== id) : [...visibleSelectedIds, id]
+      : [id]);
+  };
 
   const canCreateFolder =
     currentNode.kind !== 'root' && currentNode.kind !== 'bin';
@@ -347,15 +355,55 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
   };
 
   const selectedMutableIds = useMemo(
-    () => selectedIds.filter((id) => nodes[id] && !nodes[id].isSystem),
-    [selectedIds, nodes],
+    () => visibleSelectedIds.filter((id) => !nodes[id].isSystem),
+    [visibleSelectedIds, nodes],
   );
 
-  const handleDeleteSelected = () => {
+  const handleDeleteSelected = useCallback(() => {
     if (selectedMutableIds.length === 0) return;
     deleteNodes(selectedMutableIds);
     setSelectedIds([]);
+  }, [deleteNodes, selectedMutableIds]);
+
+  const ignoreExplorerHotkey = (event: KeyboardEvent) => {
+    const desktop = useDesktopStore.getState();
+    const { target } = event;
+    return desktop.activeAppId !== windowId || desktop.isStartMenuOpen || desktop.isTaskViewOpen ||
+      showPropertiesModal || event.defaultPrevented || event.isComposing ||
+      !(target instanceof HTMLElement) || (target !== document.body && !rootRef.current?.contains(target));
   };
+  const hotkeyOptions = { useKey: true, ignoreEventWhen: ignoreExplorerHotkey };
+  const navigationOptions = { ...hotkeyOptions, preventDefault: true, enableOnFormTags: true };
+  const clipboardOptions = {
+    ...hotkeyOptions,
+    ignoreEventWhen: (event: KeyboardEvent) => ignoreExplorerHotkey(event) || !!window.getSelection()?.toString(),
+  };
+
+  useHotkeys('alt+left, browserback', goBack, navigationOptions, [goBack]);
+  useHotkeys('alt+right, browserforward', goForward, navigationOptions, [goForward]);
+  useHotkeys('alt+up', goUp, navigationOptions, [goUp]);
+  useHotkeys('backspace', goBack, { ...hotkeyOptions, preventDefault: true }, [goBack]);
+
+  useHotkeys('ctrl+a, meta+a', () => {
+    selectionAnchor.current = visibleIds[0] ?? null;
+    setSelectedIds(visibleIds);
+  }, { ...hotkeyOptions, preventDefault: true }, [visibleIds]);
+
+  useHotkeys('ctrl+c, meta+c, ctrl+x, meta+x', (event) => {
+    if (setFileClipboard(event.key.toLowerCase() === 'x' ? 'cut' : 'copy', selectedMutableIds)) {
+      event.preventDefault();
+    }
+  }, clipboardOptions, [selectedMutableIds, setFileClipboard]);
+
+  useHotkeys('ctrl+v, meta+v', (event) => {
+    if (pasteFiles(currentFolderId)) event.preventDefault();
+  }, clipboardOptions, [currentFolderId, pasteFiles]);
+
+  useHotkeys('delete', (event) => {
+    if (event.repeat || currentFolderId === 'recycle-bin' || !selectedMutableIds.length) return;
+    event.preventDefault();
+    handleDeleteSelected();
+  }, hotkeyOptions, [currentFolderId, selectedMutableIds.length, handleDeleteSelected]);
 
   const handleStartRename = (id?: string) => {
     const targetId = id ?? selectedMutableIds[0];
@@ -376,32 +424,9 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
     });
   };
 
-  const driveCount = Math.max(1, thisPcDrives.length);
-  const perDriveQuotaBytes = Math.floor(storageQuotaBytes / driveCount);
-
-  const getDriveUsedBytes = (driveId: string): number => {
-    const visited: FsNode[] = [];
-    const stack = [driveId];
-    while (stack.length > 0) {
-      const id = stack.pop()!;
-      const node = nodes[id];
-      if (!node) continue;
-      visited.push(node);
-      for (const child of childrenMap.get(id) ?? []) {
-        stack.push(child.id);
-      }
-    }
-    const serialized = JSON.stringify(visited);
-    return typeof TextEncoder !== 'undefined'
-      ? new TextEncoder().encode(serialized).length
-      : serialized.length * 2;
-  };
-
+  const driveUsage = useMemo(() => getDriveUsageBytes(nodes), [nodes]);
   const freeBytes = Math.max(0, storageQuotaBytes - storageUsedBytes);
-  const currentDriveFreeBytes =
-    currentNode.kind === 'drive'
-      ? Math.max(0, perDriveQuotaBytes - getDriveUsedBytes(currentNode.id))
-      : freeBytes;
+  const estimatedDriveBudget = Math.floor(storageQuotaBytes / Math.max(1, thisPcDrives.length));
 
   const renderTreeNode = (nodeId: string, depth: number) => {
     const node = nodes[nodeId];
@@ -448,7 +473,8 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
   const handlePaneContextMenu = (e: MouseEvent, targetNodeId: string | null) => {
     e.preventDefault();
     e.stopPropagation();
-    if (targetNodeId && !selectedIds.includes(targetNodeId)) {
+    if (targetNodeId && !visibleSelectedIds.includes(targetNodeId)) {
+      selectionAnchor.current = targetNodeId;
       setSelectedIds([targetNodeId]);
     }
     const rect = rootRef.current?.getBoundingClientRect();
@@ -458,7 +484,7 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
   };
 
   const renderFolderTile = (item: FsNode) => {
-    const isSelected = selectedIds.includes(item.id);
+    const isSelected = selectedSet.has(item.id);
     const isRenaming = renamingId === item.id;
     const isVerticalIcon =
       viewMode === 'extra-large' || viewMode === 'large' || viewMode === 'medium';
@@ -500,13 +526,7 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
         tabIndex={0}
         onClick={(e) => {
           e.stopPropagation();
-          setSelectedIds((prev) =>
-            e.ctrlKey || e.metaKey
-              ? prev.includes(item.id)
-                ? prev.filter((x) => x !== item.id)
-                : [...prev, item.id]
-              : [item.id],
-          );
+          selectItem(item.id, e);
         }}
         onDoubleClick={(e) => {
           e.stopPropagation();
@@ -600,7 +620,7 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
       </div>
 
       {/* Ribbon Toolbar */}
-      <div className="flex items-center gap-1 px-2 py-1.5 bg-[#202020] border-b border-[#333333] shrink-0">
+      <div className="flex items-center gap-1 overflow-x-auto whitespace-nowrap px-2 py-1.5 bg-[#202020] border-b border-[#333333] shrink-0">
         {currentFolderId === 'recycle-bin' ? (
           <>
             <button
@@ -659,9 +679,24 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
               <span>New Text Document</span>
             </button>
 
+            {(['cut', 'copy'] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                disabled={selectedMutableIds.length === 0}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setFileClipboard(mode, selectedMutableIds);
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1 text-[12px] border border-transparent enabled:hover:bg-[#333333] enabled:hover:border-[#4d4d4d] disabled:opacity-40 cursor-default"
+              >
+                {mode === 'cut' ? 'Cut' : 'Copy'}
+              </button>
+            ))}
+
             <button
               type="button"
-              disabled={selectedMutableIds.length !== 1}
+              disabled={visibleSelectedIds.length !== 1 || selectedMutableIds.length !== 1}
               onClick={(e) => {
                 e.stopPropagation();
                 handleStartRename();
@@ -773,7 +808,10 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
         <input
           type="text"
           value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+          onChange={(e) => {
+            setSearchQuery(e.target.value);
+            setSelectedIds([]);
+          }}
           onClick={(e) => e.stopPropagation()}
           placeholder={`Search ${currentNode.name}`}
           className="w-[180px] h-[24px] bg-[#191919] border border-[#3d3d3d] focus:border-[#0078d7] px-2 text-[12px] text-white placeholder:text-[#888888] outline-none"
@@ -868,14 +906,14 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
                 {!foldersCollapsed && (
                   <div className="flex flex-wrap gap-2">
                     {thisPcFolders.map((folder) => {
-                      const isSelected = selectedIds.includes(folder.id);
+                      const isSelected = selectedSet.has(folder.id);
                       return (
                         <button
                           key={folder.id}
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setSelectedIds([folder.id]);
+                            selectItem(folder.id, e);
                           }}
                           onDoubleClick={(e) => {
                             e.stopPropagation();
@@ -918,10 +956,11 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
                 {!drivesCollapsed && (
                   <div className="flex flex-wrap gap-3">
                     {thisPcDrives.map((drive) => {
-                      const isSelected = selectedIds.includes(drive.id);
-                      const driveUsedBytes = getDriveUsedBytes(drive.id);
-                      const driveFreeBytes = Math.max(0, perDriveQuotaBytes - driveUsedBytes);
-                      const driveUsedPct = Math.min(100, (driveUsedBytes / Math.max(1, perDriveQuotaBytes)) * 100);
+                      const isSelected = selectedSet.has(drive.id);
+                      const driveUsedBytes = driveUsage.get(drive.id) ?? 0;
+                      const driveFreeBytes = Math.min(freeBytes, Math.max(0, estimatedDriveBudget - driveUsedBytes));
+                      const driveCapacityBytes = driveUsedBytes + driveFreeBytes;
+                      const driveUsedPct = (driveUsedBytes / Math.max(1, driveCapacityBytes)) * 100;
                       return (
                         <button
                           key={drive.id}
@@ -929,7 +968,7 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
                           data-testid={drive.id === 'drive-c' ? 'drive-card-c' : `drive-card-${drive.id}`}
                           onClick={(e) => {
                             e.stopPropagation();
-                            setSelectedIds([drive.id]);
+                            selectItem(drive.id, e);
                           }}
                           onDoubleClick={(e) => {
                             e.stopPropagation();
@@ -950,9 +989,9 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
                           />
                           <div className="flex-1 min-w-0">
                             <div className="text-[12.5px] text-white truncate">{drive.name}</div>
-                            <div className="w-full h-[14px] bg-[#3b3b3b] border border-[#555555] my-1 overflow-hidden">
+                            <div aria-hidden="true" className="w-full h-[14px] bg-[#3b3b3b] border border-[#555555] my-1 overflow-hidden">
                               <div
-                                style={{ width: `${Math.max(2, driveUsedPct)}%` }}
+                                style={{ width: `${driveUsedPct}%`, minWidth: driveUsedBytes > 0 ? 1 : 0 }}
                                 className={`h-full transition-all duration-300 ${
                                   driveUsedPct >= 90 ? 'bg-[#da2626]' : 'bg-[#26a0da]'
                                 }`}
@@ -960,9 +999,10 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
                             </div>
                             <div
                               data-testid="drive-storage-caption"
+                              title={`${formatStorageBytes(driveUsedBytes)} used · Estimated drive capacity from shared browser storage`}
                               className="text-[11px] text-[#b0b0b0] truncate"
                             >
-                              {formatStorageBytes(driveFreeBytes)} free of {formatStorageBytes(perDriveQuotaBytes)}
+                              {formatStorageBytes(driveFreeBytes)} free of {formatStorageBytes(driveCapacityBytes)}
                             </div>
                           </div>
                         </button>
@@ -1007,14 +1047,18 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
           <span>
             {currentChildren.length} {currentChildren.length === 1 ? 'item' : 'items'}
           </span>
-          {selectedIds.length > 0 && (
+          {visibleSelectedIds.length > 0 && (
             <span className="border-l border-[#3a3a3a] pl-3">
-              {selectedIds.length} {selectedIds.length === 1 ? 'item' : 'items'} selected
+              {visibleSelectedIds.length} {visibleSelectedIds.length === 1 ? 'item' : 'items'} selected
             </span>
           )}
         </div>
-        <div data-testid="explorer-storage-status" className="text-[#aaaaaa] tabular-nums">
-          IndexedDB: {formatStorageBytes(storageUsedBytes)} / {formatStorageBytes(storageQuotaBytes)}
+        <div
+          data-testid="explorer-storage-status"
+          title={`${formatStorageBytes(storageUsedBytes)} used by this site`}
+          className="text-[#aaaaaa] tabular-nums"
+        >
+          Browser storage (shared) · {formatStorageBytes(freeBytes)} free of {formatStorageBytes(storageQuotaBytes)}
         </div>
       </footer>
 
@@ -1027,7 +1071,7 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
           containerHeight={rootRef.current?.clientHeight ?? 568}
           currentFolderId={currentFolderId}
           canCreate={canCreateFolder}
-          selectedIds={selectedIds}
+          selectedIds={visibleSelectedIds}
           targetNode={contextMenu.targetNodeId ? nodes[contextMenu.targetNodeId] ?? null : null}
           viewMode={viewMode}
           sortField={sortField}
@@ -1052,12 +1096,12 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
           onCreateTextFile={handleCreateNewTextFile}
           onOpenNode={handleOpenNode}
           onRenameNode={(nodeId) => handleStartRename(nodeId)}
-          onDeleteNode={(nodeId) => {
-            deleteNodes([nodeId]);
+          onDeleteNodes={(ids) => {
+            deleteNodes(ids);
             setSelectedIds([]);
           }}
-          onRestoreNode={(nodeId) => {
-            restoreNodes([nodeId]);
+          onRestoreNodes={(ids) => {
+            restoreNodes(ids);
             setSelectedIds([]);
           }}
           onShowProperties={() => setShowPropertiesModal(true)}
@@ -1095,18 +1139,18 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
                 <span>{currentChildren.length} items</span>
               </div>
               <div className="flex justify-between text-[#cccccc]">
-                <span>Storage used:</span>
+                <span>{currentNode.kind === 'drive' ? 'Drive used' : 'Browser storage used'}</span>
                 <span>
                   {formatStorageBytes(
                     currentNode.kind === 'drive'
-                      ? getDriveUsedBytes(currentNode.id)
+                      ? driveUsage.get(currentNode.id) ?? 0
                       : storageUsedBytes,
                   )}
                 </span>
               </div>
               <div className="flex justify-between text-[#cccccc]">
-                <span>Free space:</span>
-                <span>{formatStorageBytes(currentDriveFreeBytes)}</span>
+                <span>Shared browser space free</span>
+                <span>{formatStorageBytes(freeBytes)}</span>
               </div>
             </div>
             <div className="flex justify-end px-4 py-2.5 bg-[#1f1f1f] border-t border-[#3a3a3a]">

@@ -14,6 +14,7 @@ export interface FsNode {
   createdAt: number;
   modifiedAt: number;
   originalParentId?: string | null;
+  originalDriveId?: string;
 }
 
 export interface GridSlot {

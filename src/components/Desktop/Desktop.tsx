@@ -156,7 +156,7 @@ export function Desktop() {
   // Keyboard shortcuts on Desktop: F2 to rename, Delete to move user folders to Recycle Bin
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (renamingIconId) return;
+      if (e.defaultPrevented || renamingIconId) return;
       const activeTag = document.activeElement?.tagName.toLowerCase();
       if (activeTag === 'input' || activeTag === 'textarea') return;
 

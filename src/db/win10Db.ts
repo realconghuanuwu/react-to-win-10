@@ -1,4 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
+import { getFileSizeBytes } from '../utils/fileStorage';
 import type {
   FsNode,
   GridSlot,
@@ -121,10 +122,14 @@ function readLegacyLocalStorageLayout(): PersistedDesktopLayout | null {
 
 export function measureNodesBytes(nodes: Record<string, FsNode>): number {
   const serialized = JSON.stringify(nodes);
-  if (typeof TextEncoder !== 'undefined') {
-    return new TextEncoder().encode(serialized).length;
+  const blobs = new Map<string, number>();
+  for (const node of Object.values(nodes)) {
+    if (node.kind !== 'file' || !node.blobId) continue;
+    blobs.set(node.blobId, Math.max(blobs.get(node.blobId) ?? 0, getFileSizeBytes(node)));
   }
-  return serialized.length * 2;
+  // Blob-backed copies share a stored object. Text content is already in the JSON.
+  return new TextEncoder().encode(serialized).length +
+    [...blobs.values()].reduce((sum, bytes) => sum + bytes, 0);
 }
 
 export async function estimateStorageStats(

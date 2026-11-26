@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { FsNode, FsNodeKind } from '../db/types';
+import { getOwningDriveId } from '../utils/fileStorage';
 import {
   DEFAULT_IDB_QUOTA_BYTES,
   estimateStorageStats,
@@ -553,6 +554,7 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
             nextNodes[id] = {
               ...target,
               originalParentId: target.parentId,
+              originalDriveId: getOwningDriveId(state.nodes, id),
               parentId: 'recycle-bin',
               modifiedAt: Date.now(),
             };
@@ -580,6 +582,7 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
             ...target,
             parentId: restoreParent,
             originalParentId: undefined,
+            originalDriveId: undefined,
             modifiedAt: Date.now(),
           };
           changed = true;

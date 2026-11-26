@@ -80,8 +80,8 @@ interface ExplorerContextMenuProps {
   onCreateTextFile: () => void;
   onOpenNode: (node: FsNode) => void;
   onRenameNode: (nodeId: string) => void;
-  onDeleteNode: (nodeId: string) => void;
-  onRestoreNode: (nodeId: string) => void;
+  onDeleteNodes: (ids: string[]) => void;
+  onRestoreNodes: (ids: string[]) => void;
   onShowProperties: () => void;
   onClose: () => void;
 }
@@ -110,8 +110,8 @@ export function ExplorerContextMenu({
   onCreateTextFile,
   onOpenNode,
   onRenameNode,
-  onDeleteNode,
-  onRestoreNode,
+  onDeleteNodes,
+  onRestoreNodes,
   onShowProperties,
   onClose,
 }: ExplorerContextMenuProps) {
@@ -160,6 +160,8 @@ export function ExplorerContextMenu({
   if (targetNode) {
     const isInBin = currentFolderId === 'recycle-bin';
     const isMutable = !targetNode.isSystem;
+    const actionIds = selectedIds.includes(targetNode.id) ? selectedIds : [targetNode.id];
+    const canRename = isMutable && actionIds.length === 1;
 
     return (
       <div
@@ -167,6 +169,7 @@ export function ExplorerContextMenu({
         role="menu"
         aria-label="Folder item context menu"
         onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
         onContextMenu={(e) => e.preventDefault()}
         style={{ left, top, width: 196 }}
         className="absolute z-40 bg-[#2b2b2b] border border-[#767676] shadow-[2px_4px_12px_rgba(0,0,0,0.55)] py-[3px] select-none"
@@ -193,7 +196,7 @@ export function ExplorerContextMenu({
             type="button"
             role="menuitem"
             onClick={() => {
-              onRestoreNode(targetNode.id);
+              onRestoreNodes(actionIds);
               onClose();
             }}
             className={`${rowClass} w-full`}
@@ -214,7 +217,7 @@ export function ExplorerContextMenu({
                 disabled={!(isMutable)}
                 className={isMutable ? `${rowClass} w-full` : `${disabledRowClass} w-full`}
                 onClick={() => {
-                  setFileClipboard(mode, selectedIds.includes(targetNode.id) ? selectedIds : [targetNode.id]);
+                  setFileClipboard(mode, actionIds);
                   onClose();
                 }}
               >
@@ -228,13 +231,12 @@ export function ExplorerContextMenu({
             <button
               type="button"
               role="menuitem"
-              disabled={!isMutable}
+              disabled={!canRename}
               onClick={() => {
-                if (!isMutable) return;
                 onRenameNode(targetNode.id);
                 onClose();
               }}
-              className={isMutable ? `${rowClass} w-full` : `${disabledRowClass} w-full`}
+              className={canRename ? `${rowClass} w-full` : `${disabledRowClass} w-full`}
             >
               <div className="flex items-center">
                 <span className={gutterClass} />
@@ -250,7 +252,7 @@ export function ExplorerContextMenu({
           disabled={!isMutable}
           onClick={() => {
             if (!isMutable) return;
-            onDeleteNode(targetNode.id);
+            onDeleteNodes(actionIds);
             onClose();
           }}
           className={isMutable ? `${rowClass} w-full` : `${disabledRowClass} w-full`}
