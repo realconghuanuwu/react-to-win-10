@@ -1,6 +1,6 @@
 # React to Windows 10
 
-Ứng dụng web mô phỏng giao diện **Windows 10** được xây dựng bằng **React 19.3**, **TypeScript**, **pnpm 10**, **Zustand**, **Fluent UI v9**, **Tailwind CSS v4** và **Vite**.
+A **Windows 10** desktop environment clone built with **React 19.3**, **TypeScript**, **pnpm 10**, **Zustand**, **Fluent UI v9**, **Tailwind CSS v4**, and **Vite**.
 
 ## Tech Stack
 
@@ -10,33 +10,38 @@
 - **UI & Styling:** `@fluentui/react-components@^9.75.3`, `@fluentui/react-icons@^2.0.347`, `tailwindcss@^4.3.5` (`@tailwindcss/vite`)
 - **Bundler:** `vite@^8.3.8`
 
-## Tính năng hiện có
+## Features
 
-- **Màn hình Desktop Windows 10**
-  - Hình nền Hero chuẩn Windows 10 và bộ icon trích xuất chuẩn Windows 10 (`Recycle Bin`, `This PC`, `File Explorer`, `Calculator`, `Microsoft Store`).
-  - Hỗ trợ chọn icon (click, `Ctrl+Click`), kéo khung chọn (marquee selection), double-click để mở ứng dụng.
-  - **Desktop Context Menu (chuột phải):** Thiết kế giống Windows 10 với các submenu `View ›` (`Large`/`Medium`/`Small icons`, `Show desktop icons`), `Sort by ›`, `Refresh`, `Paste`/`Paste shortcut` (disabled), `New ›`, `Display settings`, `Personalize`.
+- **Windows 10 Desktop**
+  - Authentic Windows 10 Hero wallpaper and icons (`Recycle Bin`, `This PC`, `File Explorer`, `Calculator`, `Microsoft Store`).
+  - Single-click and `Ctrl+Click` multi-selection, marquee drag-box selection, and double-click to launch applications.
+  - **Windows 10 Desktop Context Menu:** Native dark menu with `View ›` (`Large`/`Medium`/`Small icons`, `Show desktop icons`), `Sort by ›`, `Refresh`, disabled `Paste` / `Paste shortcut`, `New ›`, `Display settings`, and `Personalize`.
 - **Taskbar & System Tray**
-  - Nút Start, Search chuẩn Windows 10, danh sách ứng dụng ghim & đang mở với vạch báo trạng thái active/minimized.
-  - System Tray với popover ẩn, Network, Volume, đồng hồ & ngày realtime (`HH:mm` / `dd/MM/yyyy`) kèm lịch Popover, Action Center và nút `Show desktop` thu nhỏ toàn bộ cửa sổ.
-- **Hệ thống cửa sổ (Window Manager)**
-  - Kéo thả (DnD) bằng thanh tiêu đề, tự khôi phục khi kéo từ trạng thái phóng to, double-click titlebar để Maximize/Restore.
-  - Resize 8 hướng (4 cạnh + 4 góc), Maximize/Fullscreen trên vùng Desktop, Minimize xuống Taskbar, Close (`×`) và tự động xếp tầng `zIndex`.
-- **Calculator (Dark Mode - Standard)**
-  - Hỗ trợ đầy đủ phép tính cơ bản (`+`, `−`, `×`, `÷`), `%`, `1/x`, `x²`, `²√x`, `+/−`, `⌫`, `CE`, `C`, bộ nhớ (`MC`, `MR`, `M+`, `M−`, `MS`, `M▾`), lịch sử phép tính (`History`) và nhập từ bàn phím.
-- **File Explorer & Virtual File System (`localStorage`)**
-  - Mở được từ `This PC`, `File Explorer` và `Recycle Bin`.
-  - Cây thư mục đệ quy bên trái (`Quick access`, `This PC`, `Local Disk (C:)`, `Recycle Bin`), breadcrumb điều hướng, nút Back/Forward/Up, tìm kiếm theo thư mục.
-  - Xem dung lượng ổ đĩa `Local Disk (C:)` đo trực tiếp từ dung lượng thực tế đã dùng trong `localStorage` (hạn mức `5.00 MB`).
-  - Tạo thư mục mới (`New folder`), đổi tên inline (`Rename`), chuyển vào thùng rác / khôi phục / xóa vĩnh viễn (`Delete`, `Restore`, `Empty Recycle Bin`), dữ liệu lưu bền vững qua `localStorage` (`win10_fs_v1`).
+  - Windows 10 Start and Search buttons, pinned & running application buttons with active/minimized bottom indicators.
+  - System Tray featuring hidden icons popover, Network, Volume, live `HH:mm` / `dd/MM/yyyy` clock & interactive calendar popover, Action Center icon, and a `Show desktop` button that minimizes all open windows.
+- **Start Menu**
+  - 3-column Windows 10 dark acrylic Start Menu anchored above the taskbar.
+  - Expandable left navigation rail (`Start`, `User`, `Documents`, `Pictures`, `Settings`, `Power` with `Sleep`/`Shut down`/`Restart`).
+  - Alphabetical `All apps` list (`Recently added`, `C`–`W`, plus expandable `Windows Accessories` folder) and `Productivity` / `Explore` Live Tiles.
+- **Window Manager**
+  - Draggable titlebar (with drag-to-unmaximize from fullscreen and double-click to maximize/restore).
+  - 8-direction edge and corner resizing (`320×220` minimum bounds, `320×480` for Calculator, `620×400` for File Explorer).
+  - Maximize/Fullscreen above the taskbar, Minimize to taskbar, Close (`×`), and automatic `zIndex` window focus stacking.
+- **Standard Calculator (Dark Mode)**
+  - Full arithmetic (`+`, `−`, `×`, `÷`), `%`, `1/x`, `x²`, `²√x`, `+/−`, backspace, `CE`/`C`, memory operations (`MC`, `MR`, `M+`, `M−`, `MS`, `M▾`), calculation history drawer, and keyboard input support.
+- **File Explorer & `localStorage` Virtual File System**
+  - Launched from `This PC`, `File Explorer`, `Recycle Bin`, or Start Menu shortcuts (`Documents`, `Pictures`).
+  - Recursive expandable left folder tree (`Quick access`, `This PC`, `Local Disk (C:)`, `Recycle Bin`), clickable breadcrumb bar, Back/Forward/Up navigation, and live folder search.
+  - Live `Local Disk (C:)` capacity bar and status readout calculated directly from actual `localStorage` byte usage against a `5.00 MB` quota.
+  - Create folders (`New folder`), inline rename (`Rename`), move to Recycle Bin / restore / permanently delete (`Delete`, `Restore`, `Empty Recycle Bin`) persisted in `localStorage` (`win10_fs_v1`).
 
-## Cấu trúc thư mục
+## Project Structure
 
 ```text
 public/
 └── assets/
-    ├── icons/              # Bộ icon Windows 10 (desktop, taskbar, explorer, context menu)
-    └── wallpapers/         # Hình nền Windows 10 Hero
+    ├── icons/              # Windows 10 icons (desktop, taskbar, start menu, explorer, context menu)
+    └── wallpapers/         # Windows 10 Hero wallpaper
 src/
 ├── components/
 │   ├── Apps/
@@ -48,6 +53,7 @@ src/
 │   │   ├── DesktopContextMenu.tsx
 │   │   └── DesktopIcon.tsx
 │   ├── Taskbar/
+│   │   ├── StartMenu.tsx
 │   │   ├── SystemTray.tsx
 │   │   ├── Taskbar.tsx
 │   │   └── Win10Icons.tsx
@@ -55,29 +61,29 @@ src/
 │       ├── WindowFrame.tsx
 │       └── WindowManager.tsx
 ├── data/
-│   └── desktopApps.ts      # Danh sách ứng dụng mặc định trên Desktop & Taskbar
+│   └── desktopApps.ts        # Desktop, taskbar, and Start Menu app registry
 ├── store/
-│   ├── useDesktopStore.ts  # Global state Desktop, Taskbar, Windows (Zustand)
-│   └── useFileSystemStore.ts # Virtual File System & đo dung lượng localStorage
+│   ├── useDesktopStore.ts    # Zustand store for Desktop, Taskbar, Start Menu, and Windows
+│   └── useFileSystemStore.ts # Zustand store for localStorage Virtual File System & drive stats
 ├── theme/
-│   └── win10Theme.ts       # Theme Fluent UI v9 tùy chỉnh cho Windows 10
+│   └── win10Theme.ts         # Custom Fluent UI v9 Windows 10 dark theme
 ├── App.tsx
 ├── index.css
 └── main.tsx
 ```
 
-## Cài đặt & Chạy dự án
+## Getting Started
 
 ```bash
-# Cài đặt dependencies
+# Install dependencies
 pnpm install
 
-# Chạy môi trường development
+# Start the development server
 pnpm dev
 
-# Kiểm tra TypeScript và build production
+# Type-check and build for production
 pnpm build
 
-# Xem trước bản build production
+# Preview the production build
 pnpm preview
 ```
