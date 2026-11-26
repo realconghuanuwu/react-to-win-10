@@ -7,6 +7,7 @@ import {
   type FormEvent,
 } from 'react';
 import { useDesktopStore } from '../../store/useDesktopStore';
+import { YouTubeView } from './YouTubeView';
 
 interface ChromeAppProps {
   windowId: string;
@@ -19,6 +20,8 @@ interface BrowserTab {
   history: string[];
   historyIndex: number;
   isLoading: boolean;
+  hasAudio?: boolean;
+  isMuted?: boolean;
   reloadNonce: number;
 }
 
@@ -123,6 +126,16 @@ function getFaviconUrl(url: string): string | null {
   }
 }
 
+function isYouTubeUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.replace(/^www\./, '');
+    return host === 'youtube.com' || host === 'm.youtube.com' || host === 'youtu.be';
+  } catch {
+    return false;
+  }
+}
+
 function toYouTubeEmbedUrl(url: string): string | null {
   try {
     const parsed = new URL(url);
@@ -185,6 +198,8 @@ function loadStoredHistory(): HistoryEntry[] {
 
 export function ChromeApp({ windowId }: ChromeAppProps) {
   const setWindowTitle = useDesktopStore((state) => state.setWindowTitle);
+  const systemVolume = useDesktopStore((state) => state.systemVolume);
+  const isSystemMuted = useDesktopStore((state) => state.isSystemMuted);
 
   const [tabs, setTabs] = useState<BrowserTab[]>(() => [createTab('chrome://newtab')]);
   const [activeTabId, setActiveTabId] = useState<string>(() => tabs[0].id);
@@ -199,7 +214,7 @@ export function ChromeApp({ windowId }: ChromeAppProps) {
   const [proxyEnabled, setProxyEnabled] = useState<boolean>(true);
   const [iframeError, setIframeError] = useState<string | null>(null);
 
-  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const iframeRefs = useRef<Record<string, HTMLIFrameElement | null>>({});
   const addressInputRef = useRef<HTMLInputElement | null>(null);
 
   const activeTab = useMemo(
@@ -223,6 +238,17 @@ export function ChromeApp({ windowId }: ChromeAppProps) {
       cancelled = true;
     };
   }, []);
+
+  // Sync system volume to all proxied iframes
+  useEffect(() => {
+    const vol = isSystemMuted ? 0 : systemVolume / 100;
+    Object.values(iframeRefs.current).forEach((frame) => {
+      frame?.contentWindow?.postMessage(
+        { type: 'chrome-set-volume', volume: vol },
+        '*',
+      );
+    });
+  }, [systemVolume, isSystemMuted]);
 
   // Persist bookmarks & history
   useEffect(() => {
@@ -325,26 +351,43 @@ export function ChromeApp({ windowId }: ChromeAppProps) {
     [activeTabId],
   );
 
-  // Listen to messages from proxied iframe pages (link clicks, form submits, title updates)
+  // Listen to messages from proxied iframe pages (link clicks, form submits, title updates, audio state)
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       const data = event.data as
-        | { type?: string; url?: string; title?: string; newTab?: boolean }
+        | {
+            type?: string;
+            url?: string;
+            title?: string;
+            newTab?: boolean;
+            playing?: boolean;
+          }
         | undefined;
       if (!data || typeof data !== 'object') return;
+
+      const sourceTabId =
+        Object.entries(iframeRefs.current).find(
+          ([, frame]) => frame?.contentWindow === event.source,
+        )?.[0] ?? activeTabId;
 
       if (data.type === 'chrome-navigate' && typeof data.url === 'string') {
         if (data.newTab) {
           openNewTab(data.url);
         } else {
-          navigateTab(activeTabId, data.url);
+          navigateTab(sourceTabId, data.url);
         }
       } else if (data.type === 'chrome-title' && typeof data.title === 'string') {
         setTabs((prev) =>
           prev.map((tab) =>
-            tab.id === activeTabId
+            tab.id === sourceTabId
               ? { ...tab, title: data.title || tab.title, isLoading: false }
               : tab,
+          ),
+        );
+      } else if (data.type === 'chrome-audio' && typeof data.playing === 'boolean') {
+        setTabs((prev) =>
+          prev.map((tab) =>
+            tab.id === sourceTabId ? { ...tab, hasAudio: data.playing } : tab,
           ),
         );
       }
@@ -442,17 +485,6 @@ export function ChromeApp({ windowId }: ChromeAppProps) {
   const canGoBack = activeTab.historyIndex > 0;
   const canGoForward = activeTab.historyIndex < activeTab.history.length - 1;
 
-  // Compute actual iframe src
-  const youtubeEmbed = toYouTubeEmbedUrl(activeTab.url);
-  const shouldUseProxy = proxyAvailable && proxyEnabled && !youtubeEmbed;
-  const iframeSrc = activeTab.url.startsWith('chrome://')
-    ? ''
-    : youtubeEmbed
-      ? youtubeEmbed
-      : shouldUseProxy
-        ? `/api/browse?url=${encodeURIComponent(activeTab.url)}`
-        : activeTab.url;
-
   return (
     <div
       className="flex-1 flex flex-col bg-white text-[#202124] overflow-hidden select-none"
@@ -492,6 +524,35 @@ export function ChromeApp({ windowId }: ChromeAppProps) {
               )}
 
               <span className="truncate flex-1">{tab.title}</span>
+
+              {tab.hasAudio && (
+                <button
+                  type="button"
+                  title={tab.isMuted ? 'Unmute tab' : 'Mute tab'}
+                  aria-label={tab.isMuted ? `Unmute ${tab.title}` : `Mute ${tab.title}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setTabs((prev) =>
+                      prev.map((t) =>
+                        t.id === tab.id ? { ...t, isMuted: !t.isMuted } : t,
+                      ),
+                    );
+                  }}
+                  className="w-4 h-4 rounded-full flex items-center justify-center text-[#5f6368] hover:bg-[#dadce0] hover:text-[#202124] shrink-0"
+                >
+                  {tab.isMuted ? (
+                    <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true">
+                      <path d="M8 2.5L4.5 5.5H2v5h2.5L8 13.5V2.5z" />
+                      <path d="M11 5.5l3 5m0-5l-3 5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" fill="none" />
+                    </svg>
+                  ) : (
+                    <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true">
+                      <path d="M8 2.5L4.5 5.5H2v5h2.5L8 13.5V2.5z" />
+                      <path d="M10.5 5.2a3.8 3.8 0 0 1 0 5.6M12.3 3.5a6.2 6.2 0 0 1 0 9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" fill="none" />
+                    </svg>
+                  )}
+                </button>
+              )}
 
               <button
                 type="button"
@@ -726,206 +787,246 @@ export function ChromeApp({ windowId }: ChromeAppProps) {
         </div>
       )}
 
-      {/* Main Content Area */}
+      {/* Main Content Area (keep all tabs mounted so background tabs keep running) */}
       <div className="relative flex-1 bg-white overflow-hidden flex flex-col">
-        {activeTab.url === 'chrome://newtab' ? (
-          <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center px-6 py-10 bg-white">
-            {/* Google Wordmark */}
-            <div className="text-[54px] font-semibold tracking-tight mb-6 select-none">
-              <span className="text-[#4285f4]">G</span>
-              <span className="text-[#ea4335]">o</span>
-              <span className="text-[#fbbc05]">o</span>
-              <span className="text-[#4285f4]">g</span>
-              <span className="text-[#34a853]">l</span>
-              <span className="text-[#ea4335]">e</span>
-            </div>
+        {tabs.map((tab) => {
+          const isTabActive = tab.id === activeTab.id;
+          const tabYoutubeMode = isYouTubeUrl(tab.url);
+          const tabYoutubeEmbed = toYouTubeEmbedUrl(tab.url);
+          const tabShouldUseProxy = proxyAvailable && proxyEnabled && !tabYoutubeEmbed;
+          const tabIframeSrc = tab.url.startsWith('chrome://')
+            ? ''
+            : tabYoutubeEmbed
+              ? tabYoutubeEmbed
+              : tabShouldUseProxy
+                ? `/api/browse?url=${encodeURIComponent(tab.url)}`
+                : tab.url;
 
-            {/* Search Box */}
-            <form
-              onSubmit={handleNewTabSearch}
-              className="w-full max-w-[540px] flex items-center h-[44px] px-4 rounded-full bg-white border border-[#dfe1e5] shadow-[0_1px_6px_rgba(32,33,36,0.12)] hover:shadow-[0_2px_8px_rgba(32,33,36,0.18)] focus-within:shadow-[0_2px_8px_rgba(32,33,36,0.2)] gap-3 mb-4"
+          return (
+            <div
+              key={tab.id}
+              className={
+                isTabActive ? 'flex-1 flex flex-col overflow-hidden' : 'hidden'
+              }
             >
-              <span className="text-[#9aa0a6] text-[15px]">🔍</span>
-              <input
-                type="text"
-                value={newTabQuery}
-                onChange={(e) => setNewTabQuery(e.target.value)}
-                placeholder={`Search ${SEARCH_ENGINES[searchEngine].label} or type a URL`}
-                className="flex-1 bg-transparent outline-none text-[14px] text-[#202124] placeholder:text-[#5f6368] select-text"
-              />
-            </form>
-
-            {/* Search Engine Selector */}
-            <div className="flex items-center gap-1.5 mb-8 text-[12px]">
-              <span className="text-[#5f6368] mr-1">Search with:</span>
-              {(Object.keys(SEARCH_ENGINES) as SearchEngine[]).map((key) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setSearchEngine(key)}
-                  className={[
-                    'px-2.5 py-1 rounded-full transition-colors',
-                    searchEngine === key
-                      ? 'bg-[#e8f0fe] text-[#1a73e8] font-medium'
-                      : 'bg-[#f1f3f4] text-[#5f6368] hover:bg-[#e8eaed]',
-                  ].join(' ')}
-                >
-                  {SEARCH_ENGINES[key].label}
-                </button>
-              ))}
-            </div>
-
-            {/* Quick Shortcuts Grid */}
-            <div className="grid grid-cols-4 gap-3 max-w-[440px] w-full">
-              {QUICK_SHORTCUTS.map((item) => (
-                <button
-                  key={item.url}
-                  type="button"
-                  onClick={() => navigateTab(activeTab.id, item.url)}
-                  className="flex flex-col items-center gap-2 p-3 rounded-lg hover:bg-[#f1f3f4] transition-colors"
-                >
-                  <div
-                    style={{ backgroundColor: item.color }}
-                    className="w-11 h-11 rounded-full text-white flex items-center justify-center text-[18px] font-semibold shadow-sm"
-                  >
-                    {item.badge}
+              {tab.url === 'chrome://newtab' ? (
+                <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center px-6 py-10 bg-white">
+                  {/* Google Wordmark */}
+                  <div className="text-[54px] font-semibold tracking-tight mb-6 select-none">
+                    <span className="text-[#4285f4]">G</span>
+                    <span className="text-[#ea4335]">o</span>
+                    <span className="text-[#fbbc05]">o</span>
+                    <span className="text-[#4285f4]">g</span>
+                    <span className="text-[#34a853]">l</span>
+                    <span className="text-[#ea4335]">e</span>
                   </div>
-                  <span className="text-[12px] text-[#202124] truncate w-full text-center">
-                    {item.title}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : activeTab.url === 'chrome://history' ? (
-          <div className="flex-1 overflow-y-auto p-6 max-w-[760px] w-full mx-auto">
-            <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#dadce0]">
-              <h1 className="text-[20px] font-medium text-[#202124]">History</h1>
-              <button
-                type="button"
-                onClick={() => setHistoryEntries([])}
-                className="px-3 py-1.5 rounded bg-[#f1f3f4] hover:bg-[#e8eaed] text-[12px] text-[#202124]"
-              >
-                Clear browsing data
-              </button>
-            </div>
-            {historyEntries.length === 0 ? (
-              <p className="text-[13px] text-[#5f6368]">No browsing history yet.</p>
-            ) : (
-              <div className="flex flex-col gap-1">
-                {historyEntries.map((entry) => (
-                  <button
-                    key={entry.id}
-                    type="button"
-                    onClick={() => navigateTab(activeTab.id, entry.url)}
-                    className="flex items-center justify-between gap-4 px-3 py-2 rounded hover:bg-[#f1f3f4] text-left"
+
+                  {/* Search Box */}
+                  <form
+                    onSubmit={handleNewTabSearch}
+                    className="w-full max-w-[540px] flex items-center h-[44px] px-4 rounded-full bg-white border border-[#dfe1e5] shadow-[0_1px_6px_rgba(32,33,36,0.12)] hover:shadow-[0_2px_8px_rgba(32,33,36,0.18)] focus-within:shadow-[0_2px_8px_rgba(32,33,36,0.2)] gap-3 mb-4"
                   >
-                    <div className="min-w-0 flex-1">
-                      <div className="text-[13px] text-[#202124] truncate">{entry.title}</div>
-                      <div className="text-[11px] text-[#5f6368] truncate">{entry.url}</div>
-                    </div>
-                    <span className="text-[11px] text-[#5f6368] shrink-0">
-                      {new Date(entry.visitedAt).toLocaleTimeString()}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : activeTab.url === 'chrome://bookmarks' ? (
-          <div className="flex-1 overflow-y-auto p-6 max-w-[760px] w-full mx-auto">
-            <h1 className="text-[20px] font-medium text-[#202124] mb-4 pb-3 border-b border-[#dadce0]">
-              Bookmarks
-            </h1>
-            <div className="flex flex-col gap-1">
-              {bookmarks.map((bm) => (
-                <div
-                  key={bm.id}
-                  className="flex items-center justify-between gap-3 px-3 py-2 rounded hover:bg-[#f1f3f4]"
-                >
-                  <button
-                    type="button"
-                    onClick={() => navigateTab(activeTab.id, bm.url)}
-                    className="min-w-0 flex-1 text-left"
-                  >
-                    <div className="text-[13px] text-[#202124] truncate">{bm.title}</div>
-                    <div className="text-[11px] text-[#5f6368] truncate">{bm.url}</div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setBookmarks((prev) => prev.filter((item) => item.id !== bm.id))
-                    }
-                    className="px-2 py-1 rounded text-[12px] text-[#5f6368] hover:bg-[#dadce0]"
-                  >
-                    Remove
-                  </button>
+                    <span className="text-[#9aa0a6] text-[15px]">🔍</span>
+                    <input
+                      type="text"
+                      value={newTabQuery}
+                      onChange={(e) => setNewTabQuery(e.target.value)}
+                      placeholder={`Search ${SEARCH_ENGINES[searchEngine].label} or type a URL`}
+                      className="flex-1 bg-transparent outline-none text-[14px] text-[#202124] placeholder:text-[#5f6368] select-text"
+                    />
+                  </form>
+
+                  {/* Search Engine Selector */}
+                  <div className="flex items-center gap-1.5 mb-8 text-[12px]">
+                    <span className="text-[#5f6368] mr-1">Search with:</span>
+                    {(Object.keys(SEARCH_ENGINES) as SearchEngine[]).map((key) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setSearchEngine(key)}
+                        className={[
+                          'px-2.5 py-1 rounded-full transition-colors',
+                          searchEngine === key
+                            ? 'bg-[#e8f0fe] text-[#1a73e8] font-medium'
+                            : 'bg-[#f1f3f4] text-[#5f6368] hover:bg-[#e8eaed]',
+                        ].join(' ')}
+                      >
+                        {SEARCH_ENGINES[key].label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Quick Shortcuts Grid */}
+                  <div className="grid grid-cols-4 gap-3 max-w-[440px] w-full">
+                    {QUICK_SHORTCUTS.map((item) => (
+                      <button
+                        key={item.url}
+                        type="button"
+                        onClick={() => navigateTab(tab.id, item.url)}
+                        className="flex flex-col items-center gap-2 p-3 rounded-lg hover:bg-[#f1f3f4] transition-colors"
+                      >
+                        <div
+                          style={{ backgroundColor: item.color }}
+                          className="w-11 h-11 rounded-full text-white flex items-center justify-center text-[18px] font-semibold shadow-sm"
+                        >
+                          {item.badge}
+                        </div>
+                        <span className="text-[12px] text-[#202124] truncate w-full text-center">
+                          {item.title}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <>
-            {iframeError ? (
-              <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-                <h2 className="text-[18px] font-medium text-[#202124] mb-2">
-                  Unable to display this page inside Chrome
-                </h2>
-                <p className="text-[13px] text-[#5f6368] max-w-[440px] mb-5">
-                  {iframeError}
-                </p>
-                <div className="flex items-center gap-3">
-                  {proxyAvailable && !proxyEnabled && (
+              ) : tabYoutubeMode && proxyAvailable ? (
+                <YouTubeView
+                  url={tab.url}
+                  reloadNonce={tab.reloadNonce}
+                  isMuted={Boolean(tab.isMuted)}
+                  onNavigate={(nextUrl) => navigateTab(tab.id, nextUrl)}
+                  onTitleChange={(nextTitle) =>
+                    setTabs((prev) =>
+                      prev.map((t) =>
+                        t.id === tab.id ? { ...t, title: nextTitle, isLoading: false } : t,
+                      ),
+                    )
+                  }
+                  onAudioChange={(playing) =>
+                    setTabs((prev) =>
+                      prev.map((t) =>
+                        t.id === tab.id ? { ...t, hasAudio: playing } : t,
+                      ),
+                    )
+                  }
+                />
+              ) : tab.url === 'chrome://history' ? (
+                <div className="flex-1 overflow-y-auto p-6 max-w-[760px] w-full mx-auto">
+                  <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#dadce0]">
+                    <h1 className="text-[20px] font-medium text-[#202124]">History</h1>
                     <button
                       type="button"
-                      onClick={() => {
-                        setProxyEnabled(true);
-                        handleReload();
-                      }}
-                      className="px-4 py-2 rounded-full bg-[#1a73e8] text-white text-[13px] hover:bg-[#1765cc]"
+                      onClick={() => setHistoryEntries([])}
+                      className="px-3 py-1.5 rounded bg-[#f1f3f4] hover:bg-[#e8eaed] text-[12px] text-[#202124]"
                     >
-                      Retry with Proxy ON
+                      Clear browsing data
                     </button>
+                  </div>
+                  {historyEntries.length === 0 ? (
+                    <p className="text-[13px] text-[#5f6368]">No browsing history yet.</p>
+                  ) : (
+                    <div className="flex flex-col gap-1">
+                      {historyEntries.map((entry) => (
+                        <button
+                          key={entry.id}
+                          type="button"
+                          onClick={() => navigateTab(tab.id, entry.url)}
+                          className="flex items-center justify-between gap-4 px-3 py-2 rounded hover:bg-[#f1f3f4] text-left"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="text-[13px] text-[#202124] truncate">{entry.title}</div>
+                            <div className="text-[11px] text-[#5f6368] truncate">{entry.url}</div>
+                          </div>
+                          <span className="text-[11px] text-[#5f6368] shrink-0">
+                            {new Date(entry.visitedAt).toLocaleTimeString()}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
                   )}
-                  <a
-                    href={activeTab.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-4 py-2 rounded-full bg-[#f1f3f4] text-[#202124] text-[13px] hover:bg-[#e8eaed]"
-                  >
-                    Open in external tab
-                  </a>
                 </div>
-              </div>
-            ) : (
-              <iframe
-                key={`${activeTab.id}-${activeTab.reloadNonce}-${shouldUseProxy ? 'proxy' : 'direct'}`}
-                ref={iframeRef}
-                src={iframeSrc}
-                title={activeTab.title}
-                onLoad={() => {
-                  setTabs((prev) =>
-                    prev.map((tab) =>
-                      tab.id === activeTab.id ? { ...tab, isLoading: false } : tab,
-                    ),
-                  );
-                }}
-                onError={() => {
-                  setTabs((prev) =>
-                    prev.map((tab) =>
-                      tab.id === activeTab.id ? { ...tab, isLoading: false } : tab,
-                    ),
-                  );
-                  setIframeError('The website refused to connect or blocked embedding.');
-                }}
-                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-presentation"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-                className="w-full h-full border-0 bg-white"
-              />
-            )}
-          </>
-        )}
+              ) : tab.url === 'chrome://bookmarks' ? (
+                <div className="flex-1 overflow-y-auto p-6 max-w-[760px] w-full mx-auto">
+                  <h1 className="text-[20px] font-medium text-[#202124] mb-4 pb-3 border-b border-[#dadce0]">
+                    Bookmarks
+                  </h1>
+                  <div className="flex flex-col gap-1">
+                    {bookmarks.map((bm) => (
+                      <div
+                        key={bm.id}
+                        className="flex items-center justify-between gap-3 px-3 py-2 rounded hover:bg-[#f1f3f4]"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => navigateTab(tab.id, bm.url)}
+                          className="min-w-0 flex-1 text-left"
+                        >
+                          <div className="text-[13px] text-[#202124] truncate">{bm.title}</div>
+                          <div className="text-[11px] text-[#5f6368] truncate">{bm.url}</div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setBookmarks((prev) => prev.filter((item) => item.id !== bm.id))
+                          }
+                          className="px-2 py-1 rounded text-[12px] text-[#5f6368] hover:bg-[#dadce0]"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : iframeError && isTabActive ? (
+                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+                  <h2 className="text-[18px] font-medium text-[#202124] mb-2">
+                    Unable to display this page inside Chrome
+                  </h2>
+                  <p className="text-[13px] text-[#5f6368] max-w-[440px] mb-5">
+                    {iframeError}
+                  </p>
+                  <div className="flex items-center gap-3">
+                    {proxyAvailable && !proxyEnabled && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProxyEnabled(true);
+                          handleReload();
+                        }}
+                        className="px-4 py-2 rounded-full bg-[#1a73e8] text-white text-[13px] hover:bg-[#1765cc]"
+                      >
+                        Retry with Proxy ON
+                      </button>
+                    )}
+                    <a
+                      href={tab.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-4 py-2 rounded-full bg-[#f1f3f4] text-[#202124] text-[13px] hover:bg-[#e8eaed]"
+                    >
+                      Open in external tab
+                    </a>
+                  </div>
+                </div>
+              ) : (
+                <iframe
+                  key={`${tab.id}-${tab.reloadNonce}-${tabShouldUseProxy ? 'proxy' : 'direct'}`}
+                  ref={(el) => {
+                    iframeRefs.current[tab.id] = el;
+                  }}
+                  src={tabIframeSrc}
+                  title={tab.title}
+                  onLoad={() => {
+                    setTabs((prev) =>
+                      prev.map((t) => (t.id === tab.id ? { ...t, isLoading: false } : t)),
+                    );
+                  }}
+                  onError={() => {
+                    setTabs((prev) =>
+                      prev.map((t) => (t.id === tab.id ? { ...t, isLoading: false } : t)),
+                    );
+                    if (isTabActive) {
+                      setIframeError('The website refused to connect or blocked embedding.');
+                    }
+                  }}
+                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-presentation"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                  className="w-full h-full border-0 bg-white"
+                />
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

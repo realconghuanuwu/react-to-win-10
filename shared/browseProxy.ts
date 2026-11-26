@@ -1,3 +1,76 @@
+export interface YouTubeVideoItem {
+  videoId: string;
+  title: string;
+  channel: string;
+  views: string;
+  published: string;
+  duration: string;
+  thumbnail: string;
+}
+
+/**
+ * Extracts video items from YouTube's `ytInitialData` JSON embedded in search/browse HTML.
+ */
+export function extractYouTubeVideos(html: string): YouTubeVideoItem[] {
+  const marker = 'var ytInitialData = ';
+  const start = html.indexOf(marker);
+  if (start === -1) return [];
+  const jsonStart = start + marker.length;
+  const end = html.indexOf(';</script>', jsonStart);
+  if (end === -1) return [];
+
+  try {
+    const data = JSON.parse(html.slice(jsonStart, end)) as unknown;
+    const results: YouTubeVideoItem[] = [];
+    const seen = new Set<string>();
+
+    const walk = (node: unknown) => {
+      if (!node || typeof node !== 'object' || results.length >= 24) return;
+      if (Array.isArray(node)) {
+        for (const item of node) walk(item);
+        return;
+      }
+      const record = node as Record<string, unknown>;
+      const renderer = record.videoRenderer as Record<string, unknown> | undefined;
+      if (renderer && typeof renderer.videoId === 'string' && !seen.has(renderer.videoId)) {
+        seen.add(renderer.videoId);
+        const titleRuns = (renderer.title as { runs?: Array<{ text?: string }> } | undefined)?.runs;
+        const title = titleRuns?.map((r) => r.text ?? '').join('') || 'YouTube Video';
+        const ownerRuns = (
+          renderer.ownerText as { runs?: Array<{ text?: string }> } | undefined
+        )?.runs;
+        const channel = ownerRuns?.map((r) => r.text ?? '').join('') || '';
+        const views =
+          (renderer.shortViewCountText as { simpleText?: string } | undefined)?.simpleText ||
+          (renderer.viewCountText as { simpleText?: string } | undefined)?.simpleText ||
+          '';
+        const published =
+          (renderer.publishedTimeText as { simpleText?: string } | undefined)?.simpleText || '';
+        const duration =
+          (renderer.lengthText as { simpleText?: string } | undefined)?.simpleText || '';
+        results.push({
+          videoId: renderer.videoId,
+          title,
+          channel,
+          views,
+          published,
+          duration,
+          thumbnail: `https://i.ytimg.com/vi/${renderer.videoId}/hqdefault.jpg`,
+        });
+        return;
+      }
+      for (const val of Object.values(record)) {
+        walk(val);
+      }
+    };
+
+    walk(data);
+    return results;
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Injects a `<base>` tag and lightweight client-side bridge into proxied HTML pages
  * so relative assets, link clicks, GET forms, fetch/XHR, and nested iframes stay
@@ -157,6 +230,38 @@ export function injectProxyBridge(html: string, finalUrl: string): string {
       });
     }
   }
+
+  function updateAudioState() {
+    try {
+      var media = document.querySelectorAll('audio, video');
+      var playing = false;
+      for (var i = 0; i < media.length; i++) {
+        var m = media[i];
+        if (!m.paused && !m.ended && !m.muted && m.volume > 0) {
+          playing = true;
+          break;
+        }
+      }
+      window.parent.postMessage({ type: 'chrome-audio', playing: playing }, '*');
+    } catch (e) {}
+  }
+  document.addEventListener('play', updateAudioState, true);
+  document.addEventListener('pause', updateAudioState, true);
+  document.addEventListener('ended', updateAudioState, true);
+  document.addEventListener('volumechange', updateAudioState, true);
+
+  window.addEventListener('message', function(event) {
+    try {
+      if (event.data && event.data.type === 'chrome-set-volume') {
+        var vol = typeof event.data.volume === 'number' ? event.data.volume : 1;
+        var media = document.querySelectorAll('audio, video');
+        for (var i = 0; i < media.length; i++) {
+          media[i].volume = Math.max(0, Math.min(1, vol));
+          media[i].muted = vol === 0;
+        }
+      }
+    } catch (e) {}
+  });
 })();
 </script>`.trim();
 

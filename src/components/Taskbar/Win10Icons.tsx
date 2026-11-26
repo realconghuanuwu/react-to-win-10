@@ -84,12 +84,26 @@ export function Win10WifiIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
-export function Win10VolumeIcon(props: SVGProps<SVGSVGElement>) {
+export function Win10VolumeIcon({
+  muted = false,
+  level = 85,
+  ...props
+}: SVGProps<SVGSVGElement> & { muted?: boolean; level?: number }) {
+  const isMuted = muted || level === 0;
   return (
     <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true" {...props}>
       <path d="M3.5 7.75H6.5L10.5 4.25V15.75L6.5 12.25H3.5V7.75Z" strokeLinejoin="round" />
-      <path d="M13 7.5C14.1 8.6 14.1 11.4 13 12.5" strokeLinecap="round" />
-      <path d="M15.2 5.5C17.2 7.8 17.2 12.2 15.2 14.5" strokeLinecap="round" />
+      {isMuted ? (
+        <>
+          <path d="M13 7.5L17 12.5" strokeLinecap="round" />
+          <path d="M17 7.5L13 12.5" strokeLinecap="round" />
+        </>
+      ) : (
+        <>
+          {level > 0 && <path d="M13 7.5C14.1 8.6 14.1 11.4 13 12.5" strokeLinecap="round" />}
+          {level >= 45 && <path d="M15.2 5.5C17.2 7.8 17.2 12.2 15.2 14.5" strokeLinecap="round" />}
+        </>
+      )}
     </svg>
   );
 }

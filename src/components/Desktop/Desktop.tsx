@@ -62,6 +62,7 @@ export function Desktop() {
   const renameShortcut = useDesktopStore((state) => state.renameShortcut);
   const openApp = useDesktopStore((state) => state.openApp);
   const openNotepadFile = useDesktopStore((state) => state.openNotepadFile);
+  const openOfficeFile = useDesktopStore((state) => state.openOfficeFile);
 
   const fsNodes = useFileSystemStore((state) => state.nodes);
   const renameFsNode = useFileSystemStore((state) => state.renameNode);
@@ -179,14 +180,21 @@ export function Desktop() {
   const handleOpenItem = useCallback(
     (item: DesktopDisplayItem) => {
       if (item.isFile) {
-        openNotepadFile(item.id);
+        const lower = item.name.toLowerCase();
+        if (lower.endsWith('.unidoc') || lower.endsWith('.doc') || lower.endsWith('.docx')) {
+          openOfficeFile('word', item.id);
+        } else if (lower.endsWith('.unisheet') || lower.endsWith('.xls') || lower.endsWith('.xlsx')) {
+          openOfficeFile('excel', item.id);
+        } else {
+          openNotepadFile(item.id);
+        }
       } else if (item.isFolder) {
         openApp('explorer', item.id);
       } else {
         openApp(item.id);
       }
     },
-    [openApp, openNotepadFile],
+    [openApp, openNotepadFile, openOfficeFile],
   );
 
   const handleCommitRename = useCallback(

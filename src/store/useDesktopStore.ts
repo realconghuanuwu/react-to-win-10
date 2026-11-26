@@ -114,6 +114,8 @@ const DEFAULT_POSITIONS: Record<string, GridSlot> = {
   calculator: { col: 0, row: 3 },
   store: { col: 0, row: 4 },
   chrome: { col: 0, row: 5 },
+  word: { col: 1, row: 0 },
+  excel: { col: 1, row: 1 },
 };
 
 export const DEFAULT_PERSONALIZATION_SETTINGS: PersonalizationSettings = {
@@ -159,6 +161,8 @@ interface DesktopState {
   explorerStartFolderId: string;
   notepadActiveFileId: string | null;
   notepadOpenNonce: number;
+  officeActiveFileId: string | null;
+  officeOpenNonce: number;
   iconSize: DesktopIconSize;
   showDesktopIcons: boolean;
   sortBy: DesktopSortField;
@@ -169,6 +173,10 @@ interface DesktopState {
   taskbarContextMenuPos: TaskbarContextMenuPosition | null;
   taskbarSettings: TaskbarSettings;
   personalizationSettings: PersonalizationSettings;
+  systemVolume: number;
+  isSystemMuted: boolean;
+  setSystemVolume: (volume: number) => void;
+  toggleSystemMute: () => void;
   settingsActiveTab: PersonalizationTab;
   hydrate: () => Promise<void>;
   selectIcon: (id: string, multiSelect: boolean) => void;
@@ -202,6 +210,7 @@ interface DesktopState {
   renameShortcut: (id: string, newLabel: string) => void;
   openApp: (id: string, explorerFolderId?: string) => void;
   openNotepadFile: (fileId: string | null) => void;
+  openOfficeFile: (appId: 'word' | 'excel', fileId: string | null) => void;
   toggleTaskbarApp: (id: string) => void;
   focusWindow: (id: string) => void;
   minimizeWindow: (id: string) => void;
@@ -239,10 +248,11 @@ function createInitialBounds(
   const isExplorer = appId === 'explorer' || appId === 'this-pc' || appId === 'recycle-bin';
   const isSettings = appId === 'settings';
   const isChrome = appId === 'chrome';
-  const targetWidth = isCalc ? 340 : isChrome ? 1040 : isExplorer ? 940 : isSettings ? 840 : DEFAULT_WIDTH;
-  const targetHeight = isCalc ? 540 : isChrome ? 680 : isExplorer ? 600 : isSettings ? 580 : DEFAULT_HEIGHT;
-  const minWidth = isCalc ? 320 : isChrome ? 520 : isExplorer ? 620 : isSettings ? 580 : 320;
-  const minHeight = isCalc ? 480 : isChrome ? 380 : isExplorer ? 400 : isSettings ? 420 : 220;
+  const isOffice = appId === 'word' || appId === 'excel';
+  const targetWidth = isCalc ? 340 : isOffice ? 1120 : isChrome ? 1040 : isExplorer ? 940 : isSettings ? 840 : DEFAULT_WIDTH;
+  const targetHeight = isCalc ? 540 : isOffice ? 700 : isChrome ? 680 : isExplorer ? 600 : isSettings ? 580 : DEFAULT_HEIGHT;
+  const minWidth = isCalc ? 320 : isOffice ? 680 : isChrome ? 520 : isExplorer ? 620 : isSettings ? 580 : 320;
+  const minHeight = isCalc ? 480 : isOffice ? 460 : isChrome ? 380 : isExplorer ? 400 : isSettings ? 420 : 220;
 
   const width = Math.min(targetWidth, Math.max(minWidth, vw - 48));
   const height = Math.min(targetHeight, Math.max(minHeight, vh - 48));
@@ -293,6 +303,8 @@ export const useDesktopStore = create<DesktopState>((set) => ({
   explorerStartFolderId: 'this-pc',
   notepadActiveFileId: null,
   notepadOpenNonce: 0,
+  officeActiveFileId: null,
+  officeOpenNonce: 0,
   iconSize: 'medium',
   showDesktopIcons: true,
   sortBy: 'default',
@@ -302,6 +314,58 @@ export const useDesktopStore = create<DesktopState>((set) => ({
   contextMenuPos: null,
   taskbarContextMenuPos: null,
   taskbarSettings: DEFAULT_TASKBAR_SETTINGS,
+  systemVolume: (() => {
+    try {
+      const raw = typeof window !== 'undefined' ? window.localStorage.getItem('win10_system_volume_v1') : null;
+      if (!raw) return 85;
+      const parsed = JSON.parse(raw) as { volume?: number };
+      return typeof parsed.volume === 'number' ? Math.max(0, Math.min(100, Math.round(parsed.volume))) : 85;
+    } catch {
+      return 85;
+    }
+  })(),
+  isSystemMuted: (() => {
+    try {
+      const raw = typeof window !== 'undefined' ? window.localStorage.getItem('win10_system_volume_v1') : null;
+      if (!raw) return false;
+      const parsed = JSON.parse(raw) as { muted?: boolean };
+      return Boolean(parsed.muted);
+    } catch {
+      return false;
+    }
+  })(),
+
+  setSystemVolume: (volume) =>
+    set((state) => {
+      const clamped = Math.max(0, Math.min(100, Math.round(volume)));
+      const nextMuted = clamped === 0 ? true : false;
+      try {
+        window.localStorage.setItem(
+          'win10_system_volume_v1',
+          JSON.stringify({ volume: clamped, muted: nextMuted }),
+        );
+      } catch {
+        // ignore
+      }
+      return {
+        systemVolume: clamped,
+        isSystemMuted: clamped === 0 ? true : state.isSystemMuted && clamped > 0 ? false : nextMuted,
+      };
+    }),
+
+  toggleSystemMute: () =>
+    set((state) => {
+      const nextMuted = !state.isSystemMuted;
+      try {
+        window.localStorage.setItem(
+          'win10_system_volume_v1',
+          JSON.stringify({ volume: state.systemVolume, muted: nextMuted }),
+        );
+      } catch {
+        // ignore
+      }
+      return { isSystemMuted: nextMuted };
+    }),
   personalizationSettings: DEFAULT_PERSONALIZATION_SETTINGS,
   settingsActiveTab: 'Background',
 
@@ -651,6 +715,57 @@ export const useDesktopStore = create<DesktopState>((set) => ({
         isStartMenuOpen: false,
         explorerStartFolderId: nextStartFolder,
         notepadActiveFileId: id === 'notepad' ? null : state.notepadActiveFileId,
+        officeActiveFileId: id === 'word' || id === 'excel' ? null : state.officeActiveFileId,
+      };
+    }),
+
+  openOfficeFile: (appId, fileId) =>
+    set((state) => {
+      const app = state.apps.find((item) => item.id === appId);
+      if (!app) return state;
+
+      const nextZ = state.topZIndex + 1;
+      const existing = state.windows.find((w) => w.id === appId);
+
+      if (existing) {
+        return {
+          windows: state.windows.map((w) =>
+            w.id === appId ? { ...w, isMinimized: false, zIndex: nextZ } : w,
+          ),
+          activeAppId: appId,
+          topZIndex: nextZ,
+          contextMenuPos: null,
+          isStartMenuOpen: false,
+          officeActiveFileId: fileId,
+          officeOpenNonce: state.officeOpenNonce + 1,
+        };
+      }
+
+      const { bounds, minWidth, minHeight } = createInitialBounds(
+        appId,
+        state.windows.length,
+        state.taskbarSettings,
+      );
+      const newWindow: AppWindow = {
+        id: appId,
+        title: app.name,
+        icon: app.icon,
+        ...bounds,
+        minWidth,
+        minHeight,
+        zIndex: nextZ,
+        isMinimized: false,
+        isMaximized: false,
+      };
+
+      return {
+        windows: [...state.windows, newWindow],
+        activeAppId: appId,
+        topZIndex: nextZ,
+        contextMenuPos: null,
+        isStartMenuOpen: false,
+        officeActiveFileId: fileId,
+        officeOpenNonce: state.officeOpenNonce + 1,
       };
     }),
 

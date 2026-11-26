@@ -284,9 +284,19 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
       const trimmed = desiredName?.trim();
       let baseName = 'New Text Document';
       let ext = '.txt';
+      let icon = '/assets/icons/txt-file.svg';
       if (trimmed) {
-        if (trimmed.toLowerCase().endsWith('.txt')) {
+        const lower = trimmed.toLowerCase();
+        if (lower.endsWith('.txt')) {
           baseName = trimmed.slice(0, -4) || 'New Text Document';
+        } else if (lower.endsWith('.unidoc')) {
+          baseName = trimmed.slice(0, -7) || 'Document';
+          ext = '.unidoc';
+          icon = '/assets/icons/word.svg';
+        } else if (lower.endsWith('.unisheet')) {
+          baseName = trimmed.slice(0, -9) || 'Book';
+          ext = '.unisheet';
+          icon = '/assets/icons/excel.svg';
         } else {
           baseName = trimmed;
           ext = '.txt';
@@ -294,7 +304,7 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
       }
 
       const name = getUniqueNodeName(state.nodes, parentId, baseName, ext);
-      const id = `txt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const id = `file-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       const timestamp = Date.now();
 
       const nextNodes: Record<string, FsNode> = {
@@ -304,7 +314,7 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
           parentId,
           name,
           kind: 'file',
-          icon: '/assets/icons/txt-file.svg',
+          icon,
           content: initialContent,
           isSystem: false,
           createdAt: timestamp,

@@ -1,4 +1,4 @@
-import { injectProxyBridge } from '../shared/browseProxy';
+import { extractYouTubeVideos, injectProxyBridge } from '../shared/browseProxy';
 
 interface Env {
   ASSETS: {
@@ -103,6 +103,26 @@ export default {
 
     if (url.pathname === '/api/browse-health') {
       return Response.json({ ok: true }, { headers: CORS_HEADERS });
+    }
+
+    if (url.pathname === '/api/youtube') {
+      const q = url.searchParams.get('q')?.trim() || 'trending music tech';
+      try {
+        const ytRes = await fetch(
+          `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`,
+          {
+            headers: {
+              'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+              'Accept-Language': 'en-US,en;q=0.9,vi;q=0.8',
+            },
+          },
+        );
+        const html = await ytRes.text();
+        return Response.json({ videos: extractYouTubeVideos(html) }, { headers: CORS_HEADERS });
+      } catch {
+        return Response.json({ videos: [] }, { status: 502, headers: CORS_HEADERS });
+      }
     }
 
     if (url.pathname === '/api/browse') {

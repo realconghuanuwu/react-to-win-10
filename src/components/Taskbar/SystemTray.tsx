@@ -33,10 +33,22 @@ function formatDate(date: Date): string {
 
 export function SystemTray() {
   const [now, setNow] = useState(() => new Date());
+  const [audioDeviceIndex, setAudioDeviceIndex] = useState(0);
+  const [showAudioDevices, setShowAudioDevices] = useState(false);
   const settings = useDesktopStore((state) => state.taskbarSettings);
+  const systemVolume = useDesktopStore((state) => state.systemVolume);
+  const isSystemMuted = useDesktopStore((state) => state.isSystemMuted);
+  const setSystemVolume = useDesktopStore((state) => state.setSystemVolume);
+  const toggleSystemMute = useDesktopStore((state) => state.toggleSystemMute);
   const toggleShowDesktop = useDesktopStore((state) => state.toggleShowDesktop);
   const setPeekingDesktop = useDesktopStore((state) => state.setPeekingDesktop);
   const openApp = useDesktopStore((state) => state.openApp);
+
+  const audioDevices = [
+    'Speakers (Realtek(R) Audio)',
+    'Headphones (Stereo)',
+  ];
+  const effectiveVolume = isSystemMuted ? 0 : systemVolume;
 
   const isVertical = settings.location === 'left' || settings.location === 'right';
   const popoverPos =
@@ -218,15 +230,109 @@ export function SystemTray() {
       )}
 
       {settings.systemIcons.volume && (
-        <Tooltip content="Speakers: 85%" relationship="label" positioning={popoverPos}>
-          <button
-            type="button"
-            aria-label="Volume"
-            className={`flex items-center justify-center ${isVertical ? btnSizeClass : 'w-7 h-full'} hover:bg-white/12 transition-colors cursor-default`}
-          >
-            <Win10VolumeIcon className="text-white/95" />
-          </button>
-        </Tooltip>
+        <Popover positioning={popoverPos}>
+          <PopoverTrigger disableButtonEnhancement>
+            <button
+              type="button"
+              aria-label="Volume"
+              title={
+                isSystemMuted || systemVolume === 0
+                  ? `${audioDevices[audioDeviceIndex]}: Muted`
+                  : `${audioDevices[audioDeviceIndex]}: ${systemVolume}%`
+              }
+              className={`flex items-center justify-center ${isVertical ? btnSizeClass : 'w-7 h-full'} hover:bg-white/12 transition-colors cursor-default`}
+            >
+              <Win10VolumeIcon
+                muted={isSystemMuted}
+                level={systemVolume}
+                className="text-white/95"
+              />
+            </button>
+          </PopoverTrigger>
+          <PopoverSurface className="!bg-[#1f1f1f]/95 !backdrop-blur-xl !border !border-[#3d3d3d] !rounded-none !p-0 !w-[344px] !text-white !shadow-[0_8px_28px_rgba(0,0,0,0.45)]">
+            <div className="flex flex-col">
+              {/* Device header */}
+              <button
+                type="button"
+                onClick={() => setShowAudioDevices((v) => !v)}
+                className="flex items-center justify-between w-full px-4 pt-3 pb-2 text-[14px] text-white/95 hover:bg-white/5 transition-colors cursor-default"
+              >
+                <span className="truncate">{audioDevices[audioDeviceIndex]}</span>
+                <span className="text-[11px] text-white/75 ml-2">
+                  {showAudioDevices ? '⌄' : '⌃'}
+                </span>
+              </button>
+
+              {/* Optional device picker */}
+              {showAudioDevices && (
+                <div className="border-t border-b border-white/10 bg-[#181818] py-1">
+                  {audioDevices.map((dev, idx) => (
+                    <button
+                      key={dev}
+                      type="button"
+                      onClick={() => {
+                        setAudioDeviceIndex(idx);
+                        setShowAudioDevices(false);
+                      }}
+                      className={[
+                        'w-full text-left px-4 py-2 text-[13px] hover:bg-white/10 transition-colors cursor-default flex items-center justify-between',
+                        idx === audioDeviceIndex ? 'text-[#60cdff]' : 'text-white/85',
+                      ].join(' ')}
+                    >
+                      <span className="truncate">{dev}</span>
+                      {idx === audioDeviceIndex && <span>✓</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Volume slider row */}
+              <div className="flex items-center gap-3 px-4 py-3.5">
+                <button
+                  type="button"
+                  aria-label={isSystemMuted ? 'Unmute' : 'Mute'}
+                  title={isSystemMuted ? 'Unmute' : 'Mute'}
+                  onClick={toggleSystemMute}
+                  className="w-8 h-8 flex items-center justify-center hover:bg-white/10 transition-colors cursor-default shrink-0"
+                >
+                  <Win10VolumeIcon
+                    muted={isSystemMuted}
+                    level={systemVolume}
+                    width="20"
+                    height="20"
+                    className="text-white/90"
+                  />
+                </button>
+
+                <div className="relative flex-1 flex items-center h-6">
+                  <div className="w-full h-[2px] bg-[#666666] relative pointer-events-none">
+                    <div
+                      style={{ width: `${effectiveVolume}%` }}
+                      className="h-full bg-[#0078d7]"
+                    />
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={effectiveVolume}
+                    aria-label="Master volume"
+                    onChange={(e) => setSystemVolume(Number(e.target.value))}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                  <div
+                    style={{ left: `calc(${effectiveVolume}% - 4px)` }}
+                    className="absolute w-[8px] h-[22px] rounded-full bg-[#0078d7] pointer-events-none shadow-sm"
+                  />
+                </div>
+
+                <span className="w-9 text-right text-[20px] font-light tabular-nums text-white/95 shrink-0">
+                  {effectiveVolume}
+                </span>
+              </div>
+            </div>
+          </PopoverSurface>
+        </Popover>
       )}
 
       {settings.systemIcons.clock && (

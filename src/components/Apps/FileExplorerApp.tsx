@@ -40,6 +40,7 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
   const setWindowTitle = useDesktopStore((state) => state.setWindowTitle);
   const explorerStartFolderId = useDesktopStore((state) => state.explorerStartFolderId);
   const openNotepadFile = useDesktopStore((state) => state.openNotepadFile);
+  const openOfficeFile = useDesktopStore((state) => state.openOfficeFile);
 
   const [history, setHistory] = useState<string[]>([initialFolderId]);
   const [historyIdx, setHistoryIdx] = useState(0);
@@ -301,7 +302,14 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
   const handleOpenNode = (item: FsNode) => {
     if (currentFolderId === 'recycle-bin') return;
     if (item.kind === 'file') {
-      openNotepadFile(item.id);
+      const lower = item.name.toLowerCase();
+      if (lower.endsWith('.unidoc') || lower.endsWith('.doc') || lower.endsWith('.docx')) {
+        openOfficeFile('word', item.id);
+      } else if (lower.endsWith('.unisheet') || lower.endsWith('.xls') || lower.endsWith('.xlsx')) {
+        openOfficeFile('excel', item.id);
+      } else {
+        openNotepadFile(item.id);
+      }
     } else {
       navigateTo(item.id);
     }

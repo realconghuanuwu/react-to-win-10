@@ -50,6 +50,20 @@ export const DESKTOP_APPS: DesktopAppItem[] = [
     showOnDesktop: true,
   },
   {
+    id: 'word',
+    name: 'Word',
+    icon: '/assets/icons/word.svg',
+    pinnedToTaskbar: true,
+    showOnDesktop: true,
+  },
+  {
+    id: 'excel',
+    name: 'Excel',
+    icon: '/assets/icons/excel.svg',
+    pinnedToTaskbar: true,
+    showOnDesktop: true,
+  },
+  {
     id: 'edge',
     name: 'Microsoft Edge',
     icon: '/assets/icons/edge.png',
@@ -101,7 +115,7 @@ export interface StartTileGroup {
 export const START_TILE_GROUPS: StartTileGroup[] = [
   {
     title: 'Productivity',
-    appIds: ['this-pc', 'explorer', 'calculator', 'chrome', 'edge', 'photos', 'notepad'],
+    appIds: ['word', 'excel', 'this-pc', 'explorer', 'calculator', 'chrome', 'edge', 'photos', 'notepad'],
   },
   {
     title: 'Explore',

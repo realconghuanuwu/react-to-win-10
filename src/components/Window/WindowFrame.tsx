@@ -1,4 +1,4 @@
-import { useRef, type PointerEvent as ReactPointerEvent } from 'react';
+import { Suspense, lazy, useRef, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   getTaskbarInsets,
   useDesktopStore,
@@ -10,6 +10,10 @@ import { FileExplorerApp } from '../Apps/FileExplorerApp';
 import { NotepadApp } from '../Apps/NotepadApp';
 import { PersonalizationSettingsApp } from '../Apps/PersonalizationSettingsApp';
 import { TaskManagerApp } from '../Apps/TaskManagerApp';
+
+const OfficeApp = lazy(() =>
+  import('../Apps/OfficeApp').then((mod) => ({ default: mod.OfficeApp })),
+);
 
 type ResizeDirection = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
@@ -248,7 +252,12 @@ export function WindowFrame({ win }: WindowFrameProps) {
         ].join(' ')}
       >
         <div className="flex items-center gap-2 min-w-0 pr-2">
-          {(isDarkApp || win.id === 'notepad' || win.id === 'task-manager' || win.id === 'chrome') && (
+          {(isDarkApp ||
+            win.id === 'notepad' ||
+            win.id === 'task-manager' ||
+            win.id === 'chrome' ||
+            win.id === 'word' ||
+            win.id === 'excel') && (
             <img
               src={win.icon}
               alt=""
@@ -321,6 +330,19 @@ export function WindowFrame({ win }: WindowFrameProps) {
         <ChromeApp windowId={win.id} />
       ) : win.id === 'notepad' ? (
         <NotepadApp windowId={win.id} />
+      ) : win.id === 'word' || win.id === 'excel' ? (
+        <Suspense
+          fallback={
+            <div className="flex-1 flex flex-col items-center justify-center bg-[#f3f2f1] text-[#323130] gap-3">
+              <img src={win.icon} alt="" className="w-12 h-12 object-contain" />
+              <span className="text-[13px] font-medium">
+                Starting Microsoft {win.id === 'word' ? 'Word' : 'Excel'}...
+              </span>
+            </div>
+          }
+        >
+          <OfficeApp mode={win.id} windowId={win.id} />
+        </Suspense>
       ) : win.id === 'settings' ? (
         <PersonalizationSettingsApp />
       ) : win.id === 'task-manager' ? (
