@@ -65,8 +65,6 @@ function RunDialog() {
       openApp('calculator');
     } else if (lower === 'chrome' || lower === 'chrome.exe' || lower.startsWith('http://') || lower.startsWith('https://')) {
       openApp('chrome');
-    } else if (lower === 'msedge' || lower === 'edge') {
-      openApp('edge');
     } else if (lower === 'winword' || lower === 'word') {
       openApp('word');
     } else if (lower === 'excel') {
@@ -263,8 +261,6 @@ function LockScreenOverlay() {
   const wifiEnabled = useDesktopStore((s) => s.wifiEnabled);
   const airplaneMode = useDesktopStore((s) => s.airplaneMode);
   const networkName = useDesktopStore((s) => s.networkName);
-  const nightLightEnabled = useDesktopStore((s) => s.nightLightEnabled);
-  const toggleQuickSetting = useDesktopStore((s) => s.toggleQuickSetting);
   const setLockScreenOpen = useDesktopStore((s) => s.setLockScreenOpen);
   const setPowerState = useDesktopStore((s) => s.setPowerState);
 
@@ -457,35 +453,23 @@ function LockScreenOverlay() {
             )}
           </form>
 
-          {/* Bottom-right Network, Night Light & Power Bar */}
+          {/* Bottom-right Power Menu */}
           <div
             onClick={(e) => e.stopPropagation()}
-            className="relative z-10 flex items-center justify-end gap-3 text-[13px]"
+            className="relative z-10 flex items-center justify-end text-[13px]"
           >
-            <span
-              title={airplaneMode ? 'Airplane mode' : wifiEnabled ? `Connected (${networkName})` : 'Disconnected'}
-              className="px-2.5 py-1.5 bg-white/10 border border-white/15 text-white/90"
-            >
-              {airplaneMode ? '✈ Airplane mode' : wifiEnabled ? `📶 ${networkName}` : 'Wi-Fi Off'}
-            </span>
-            <button
-              type="button"
-              title="Toggle Night light"
-              onClick={() => toggleQuickSetting('nightLightEnabled')}
-              className={`px-2.5 py-1.5 border cursor-default ${
-                nightLightEnabled ? 'bg-[#0078d7] border-white/40' : 'bg-white/10 hover:bg-white/20 border-white/15'
-              }`}
-            >
-              🌙 Night light
-            </button>
             <div className="relative">
               <button
                 type="button"
                 aria-label="Power options"
                 onClick={() => setPowerOpen((v) => !v)}
-                className="px-3 py-1.5 bg-white/10 hover:bg-white/20 border border-white/15 cursor-default"
+                className="inline-flex items-center gap-2 px-3 py-1.5 bg-white/10 hover:bg-white/20 border border-white/15 cursor-default"
               >
-                ⏻ Power
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
+                  <path d="M5 3.3A5.5 5.5 0 1 0 11 3.3" strokeLinecap="round" />
+                  <line x1="8" y1="1.8" x2="8" y2="7.5" strokeLinecap="round" />
+                </svg>
+                <span>Power</span>
               </button>
               {powerOpen && (
                 <div className="absolute right-0 bottom-full mb-2 w-[140px] bg-[#242424] border border-white/25 shadow-2xl py-1 text-[12px]">

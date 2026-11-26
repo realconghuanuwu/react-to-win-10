@@ -27,6 +27,7 @@ interface ExcelRibbonProps {
   onSaveToLocal: () => void;
   onSwitchToWord: () => void;
   onStatus: (msg: string) => void;
+  onOpenBackstage?: () => void;
 }
 
 const FONT_FAMILIES = [
@@ -129,6 +130,7 @@ export function ExcelRibbon({
   onSaveToLocal,
   onSwitchToWord,
   onStatus,
+  onOpenBackstage,
 }: ExcelRibbonProps) {
   const [activeTab, setActiveTab] = useState<ExcelRibbonTab>('Home');
   const [openDropdown, setOpenDropdown] = useState<DropdownKey>(null);
@@ -600,7 +602,7 @@ export function ExcelRibbon({
                 <div key={tab} className="relative">
                   <button
                     type="button"
-                    onClick={() => toggleDrop('file')}
+                    onClick={() => (onOpenBackstage ? onOpenBackstage() : toggleDrop('file'))}
                     className={`px-3.5 h-[26px] flex items-center text-[12px] cursor-default transition-colors ${
                       openDropdown === 'file'
                         ? 'bg-[#217346] text-white'

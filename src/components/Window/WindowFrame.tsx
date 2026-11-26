@@ -13,6 +13,7 @@ import { NotepadApp } from '../Apps/NotepadApp';
 import { PaintApp } from '../Apps/PaintApp';
 import { PhotosApp } from '../Apps/PhotosApp';
 import { PersonalizationSettingsApp } from '../Apps/PersonalizationSettingsApp';
+import { SnipApp } from '../Apps/SnipApp';
 import { TaskManagerApp } from '../Apps/TaskManagerApp';
 import { YouTubeDownloaderApp } from '../Apps/YouTubeDownloaderApp';
 
@@ -68,7 +69,8 @@ export function WindowFrame({ win, onSnapPreview, onSnapDrop }: WindowFrameProps
     appId === 'yt-downloader' ||
     appId === 'pdf-tool' ||
     appId === 'media-player' ||
-    appId === 'photos';
+    appId === 'photos' ||
+    appId === 'snip';
   const handleTitleBarPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
     if ((e.target as Element).closest('[data-window-control="true"]')) return;
@@ -287,7 +289,7 @@ export function WindowFrame({ win, onSnapPreview, onSnapDrop }: WindowFrameProps
       onPointerDown={() => focusWindow(win.id)}
       style={frameStyle}
       className={[
-        'pointer-events-auto absolute flex-col select-none',
+        'pointer-events-auto absolute flex-col select-none win10-window-open',
         isDarkApp ? (isExplorerApp ? 'bg-[#191919]' : 'bg-[#202020]') : 'bg-[#e6e6e6]',
         win.isMaximized
           ? 'border-0 shadow-none'
@@ -438,6 +440,8 @@ export function WindowFrame({ win, onSnapPreview, onSnapDrop }: WindowFrameProps
         <MediaPlayerApp windowId={win.id} />
       ) : appId === 'photos' ? (
         <PhotosApp windowId={win.id} />
+      ) : appId === 'snip' ? (
+        <SnipApp windowId={win.id} />
       ) : appId === 'pdf-tool' ? (
         <Suspense fallback={<div className="grid flex-1 place-items-center text-sm text-white">Opening PDF Tool…</div>}>
           <PdfToolApp />

@@ -64,12 +64,6 @@ export const DESKTOP_APPS: DesktopAppItem[] = [
     showOnDesktop: true,
   },
   {
-    id: 'edge',
-    name: 'Microsoft Edge',
-    icon: '/assets/icons/edge.png',
-    showOnDesktop: false,
-  },
-  {
     id: 'notepad',
     name: 'Notepad',
     icon: '/assets/icons/notepad.png',
@@ -139,7 +133,7 @@ export interface StartTileGroup {
 export const START_TILE_GROUPS: StartTileGroup[] = [
   {
     title: 'Productivity',
-    appIds: ['word', 'excel', 'this-pc', 'explorer', 'calculator', 'chrome', 'edge', 'photos', 'notepad'],
+    appIds: ['word', 'excel', 'this-pc', 'explorer', 'calculator', 'chrome', 'photos', 'notepad'],
   },
   {
     title: 'Explore',

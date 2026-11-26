@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from 'react';
 import { useHotkeys } from 'react-hotkeys-hook';
+import { getMediaBlob } from '../../db/win10Db';
 import { useDesktopStore } from '../../store/useDesktopStore';
 import {
   QUICK_ACCESS_IDS,
@@ -84,6 +85,8 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
   const [sortField, setSortField] = useState<ExplorerSortField>('name');
   const [sortOrder, setSortOrder] = useState<ExplorerSortOrder>('asc');
   const [groupBy, setGroupBy] = useState<ExplorerSortField | 'none'>('none');
+  const [rightPane, setRightPane] = useState<'none' | 'preview' | 'details'>('none');
+  const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
   const [showPropertiesModal, setShowPropertiesModal] = useState(false);
   const [expandedTreeIds, setExpandedTreeIds] = useState<Set<string>>(
     () => new Set(['quick-access', 'this-pc', 'drive-c', 'drive-d']),
@@ -295,6 +298,31 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
     () => visibleIds.filter((id) => selectedSet.has(id)),
     [selectedSet, visibleIds],
   );
+
+  const singleSelectedNode =
+    visibleSelectedIds.length === 1 ? nodes[visibleSelectedIds[0]] ?? null : null;
+
+  useEffect(() => {
+    let cancelled = false;
+    let url: string | null = null;
+    setPreviewBlobUrl(null);
+    if (rightPane === 'none' || !singleSelectedNode || singleSelectedNode.kind !== 'file') {
+      return;
+    }
+    if (singleSelectedNode.blobId && getFileTypeInfo(singleSelectedNode).category === 'image') {
+      void getMediaBlob(singleSelectedNode.blobId).then((blob) => {
+        if (!blob || cancelled) return;
+        url = URL.createObjectURL(blob);
+        setPreviewBlobUrl(url);
+      });
+    } else if (singleSelectedNode.content?.startsWith('data:image/')) {
+      setPreviewBlobUrl(singleSelectedNode.content);
+    }
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [rightPane, singleSelectedNode]);
 
   const selectItem = (id: string, event: MouseEvent) => {
     const additive = event.ctrlKey || event.metaKey;
@@ -864,6 +892,37 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
               <img src="/assets/icons/explorer/disk-sm.png" alt="" className="w-4 h-4 object-contain" />
               <span>Local Disk (D:)</span>
             </button>
+
+            <div className="h-5 w-px bg-[#3b3b3b] mx-1" />
+
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setRightPane((p) => (p === 'preview' ? 'none' : 'preview'));
+              }}
+              className={`flex items-center gap-1 px-2.5 py-1 text-[12px] border cursor-default ${
+                rightPane === 'preview'
+                  ? 'bg-[#333333] border-[#0078d7] text-white'
+                  : 'border-transparent hover:bg-[#333333] hover:border-[#4d4d4d]'
+              }`}
+            >
+              <span>Preview pane</span>
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setRightPane((p) => (p === 'details' ? 'none' : 'details'));
+              }}
+              className={`flex items-center gap-1 px-2.5 py-1 text-[12px] border cursor-default ${
+                rightPane === 'details'
+                  ? 'bg-[#333333] border-[#0078d7] text-white'
+                  : 'border-transparent hover:bg-[#333333] hover:border-[#4d4d4d]'
+              }`}
+            >
+              <span>Details pane</span>
+            </button>
           </>
         )}
       </div>
@@ -1174,6 +1233,65 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
             </div>
           )}
         </section>
+
+        {/* Preview / Details Pane */}
+        {rightPane !== 'none' && (
+          <aside
+            onClick={(e) => e.stopPropagation()}
+            className="w-[240px] shrink-0 bg-[#1c1c1c] border-l border-[#2d2d2d] p-4 flex flex-col gap-3 overflow-y-auto win10-dark-scroll"
+          >
+            {!singleSelectedNode ? (
+              <div className="h-full flex items-center justify-center text-center text-[12px] text-[#888888]">
+                {visibleSelectedIds.length > 1
+                  ? `${visibleSelectedIds.length} items selected`
+                  : 'Select a file to preview.'}
+              </div>
+            ) : (
+              <>
+                {rightPane === 'preview' && previewBlobUrl ? (
+                  <div className="bg-[#111111] border border-[#333333] p-2 flex items-center justify-center max-h-[200px]">
+                    <img src={previewBlobUrl} alt={singleSelectedNode.name} className="max-w-full max-h-[180px] object-contain" />
+                  </div>
+                ) : rightPane === 'preview' && singleSelectedNode.content && !singleSelectedNode.content.startsWith('{') ? (
+                  <pre className="bg-[#111111] border border-[#333333] p-2.5 text-[11px] font-mono text-[#dcdcdc] whitespace-pre-wrap break-words max-h-[220px] overflow-y-auto">
+                    {singleSelectedNode.content.slice(0, 1200)}
+                  </pre>
+                ) : (
+                  <div className="flex flex-col items-center py-4">
+                    <img src={singleSelectedNode.icon} alt="" className="w-16 h-16 object-contain" />
+                  </div>
+                )}
+
+                <div className="text-[13.5px] font-medium text-white break-words">
+                  {singleSelectedNode.name}
+                </div>
+                <div className="space-y-1.5 text-[11.5px] text-[#aaaaaa] border-t border-[#2d2d2d] pt-2.5">
+                  <div className="flex justify-between gap-2">
+                    <span>Type</span>
+                    <span className="text-[#e0e0e0] truncate">{getFileTypeInfo(singleSelectedNode).label}</span>
+                  </div>
+                  {singleSelectedNode.kind === 'file' && (
+                    <div className="flex justify-between gap-2">
+                      <span>Size</span>
+                      <span className="text-[#e0e0e0]">{formatStorageBytes(singleSelectedNode.sizeBytes ?? 0)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between gap-2">
+                    <span>Modified</span>
+                    <span className="text-[#e0e0e0]">{new Date(singleSelectedNode.modifiedAt).toLocaleDateString()}</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleOpenNode(singleSelectedNode)}
+                  className="mt-1 px-3 py-1.5 bg-[#0078d7] hover:bg-[#198ae5] text-[12px] text-white cursor-default"
+                >
+                  Open
+                </button>
+              </>
+            )}
+          </aside>
+        )}
       </div>
 
       {/* Status Bar */}

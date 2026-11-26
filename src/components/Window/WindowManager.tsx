@@ -166,7 +166,17 @@ export function WindowManager() {
       if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
 
       if (snapActiveWindow(event.key === 'ArrowLeft' ? 'left' : 'right')) {
-        setAssist(null);
+        const snapSide = event.key === 'ArrowLeft' ? 'left' : 'right';
+        const otherSide = snapSide === 'left' ? 'right' : 'left';
+        const st = useDesktopStore.getState();
+        const snappedId = st.activeAppId;
+        const remaining = st.windows.filter((item) => item.id !== snappedId && item.desktopId === st.activeDesktopId);
+        const bounds = getSnapBounds(otherSide, st.taskbarSettings);
+        setAssist(
+          snappedId && remaining.length && !remaining.some((item) => matchesBounds(item, bounds))
+            ? { sourceId: snappedId, side: otherSide }
+            : null,
+        );
         event.preventDefault();
         event.stopPropagation();
       }

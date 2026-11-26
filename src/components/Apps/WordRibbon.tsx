@@ -61,6 +61,7 @@ interface WordRibbonProps {
   onSaveToLocal: () => void;
   onSwitchToExcel: () => void;
   onStatus: (msg: string) => void;
+  onOpenBackstage?: () => void;
 }
 
 const FONT_FAMILIES = [
@@ -194,6 +195,7 @@ export function WordRibbon({
   onSaveToLocal,
   onSwitchToExcel,
   onStatus,
+  onOpenBackstage,
 }: WordRibbonProps) {
   const [activeTab, setActiveTab] = useState<WordRibbonTab>('Home');
   const [ribbonCollapsed, setRibbonCollapsed] = useState(false);
@@ -715,7 +717,7 @@ export function WordRibbon({
                 <div key={tab} className="relative">
                   <button
                     type="button"
-                    onClick={() => toggleDrop('file')}
+                    onClick={() => (onOpenBackstage ? onOpenBackstage() : toggleDrop('file'))}
                     className={`px-3.5 h-[26px] flex items-center text-[12px] cursor-default transition-colors ${
                       openDropdown === 'file' ? 'bg-[#2b579a] text-white' : 'text-[#262626] hover:bg-[#e1dfdd]'
                     }`}
@@ -1741,19 +1743,73 @@ export function WordRibbon({
                 style={{ left: `${leftMarginPct}%`, right: `${rightMarginPct}%` }}
                 className="absolute top-0 bottom-0 bg-white flex items-center justify-between px-1"
               >
-                {/* Left Indent Markers */}
+                {/* Left Indent Markers (draggable) */}
                 <span
-                  title="First Line / Hanging Indent"
-                  className="absolute -left-[4px] top-0 w-0 h-0 border-l-[4px] border-r-[4px] border-t-[5px] border-l-transparent border-r-transparent border-t-[#555]"
+                  title="First Line Indent (drag)"
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    const startX = e.clientX;
+                    const base = leftMarginPct;
+                    const onMove = (ev: PointerEvent) => {
+                      const next = Math.max(4, Math.min(35, Math.round(base + (ev.clientX - startX) / 6)));
+                      setLeftMarginPct(next);
+                    };
+                    const onUp = (ev: PointerEvent) => {
+                      window.removeEventListener('pointermove', onMove);
+                      window.removeEventListener('pointerup', onUp);
+                      const finalPct = Math.max(4, Math.min(35, Math.round(base + (ev.clientX - startX) / 6)));
+                      const pt = Math.max(0, (finalPct - 12) * 3);
+                      void execCmd('doc-paragraph-setting.command', { paragraph: { indentStart: pt } }, `Left indent: ${pt}pt`);
+                    };
+                    window.addEventListener('pointermove', onMove);
+                    window.addEventListener('pointerup', onUp);
+                  }}
+                  className="absolute -left-[4px] top-0 w-0 h-0 border-l-[4px] border-r-[4px] border-t-[5px] border-l-transparent border-r-transparent border-t-[#555] hover:border-t-[#2b579a] cursor-ew-resize"
                 />
                 <span
-                  title="Left Indent"
-                  className="absolute -left-[4px] bottom-0 w-0 h-0 border-l-[4px] border-r-[4px] border-b-[5px] border-l-transparent border-r-transparent border-b-[#555]"
+                  title="Left Indent (drag)"
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    const startX = e.clientX;
+                    const base = leftMarginPct;
+                    const onMove = (ev: PointerEvent) => {
+                      const next = Math.max(4, Math.min(35, Math.round(base + (ev.clientX - startX) / 6)));
+                      setLeftMarginPct(next);
+                    };
+                    const onUp = (ev: PointerEvent) => {
+                      window.removeEventListener('pointermove', onMove);
+                      window.removeEventListener('pointerup', onUp);
+                      const finalPct = Math.max(4, Math.min(35, Math.round(base + (ev.clientX - startX) / 6)));
+                      const pt = Math.max(0, (finalPct - 12) * 3);
+                      void execCmd('doc-paragraph-setting.command', { paragraph: { indentStart: pt } }, `Left indent: ${pt}pt`);
+                    };
+                    window.addEventListener('pointermove', onMove);
+                    window.addEventListener('pointerup', onUp);
+                  }}
+                  className="absolute -left-[4px] bottom-0 w-0 h-0 border-l-[4px] border-r-[4px] border-b-[5px] border-l-transparent border-r-transparent border-b-[#555] hover:border-b-[#2b579a] cursor-ew-resize"
                 />
-                {/* Right Indent Marker */}
+                {/* Right Indent Marker (draggable) */}
                 <span
-                  title="Right Indent"
-                  className="absolute -right-[4px] bottom-0 w-0 h-0 border-l-[4px] border-r-[4px] border-b-[5px] border-l-transparent border-r-transparent border-b-[#555]"
+                  title="Right Indent (drag)"
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    const startX = e.clientX;
+                    const base = rightMarginPct;
+                    const onMove = (ev: PointerEvent) => {
+                      const next = Math.max(4, Math.min(35, Math.round(base - (ev.clientX - startX) / 6)));
+                      setRightMarginPct(next);
+                    };
+                    const onUp = (ev: PointerEvent) => {
+                      window.removeEventListener('pointermove', onMove);
+                      window.removeEventListener('pointerup', onUp);
+                      const finalPct = Math.max(4, Math.min(35, Math.round(base - (ev.clientX - startX) / 6)));
+                      const pt = Math.max(0, (finalPct - 12) * 3);
+                      void execCmd('doc-paragraph-setting.command', { paragraph: { indentEnd: pt } }, `Right indent: ${pt}pt`);
+                    };
+                    window.addEventListener('pointermove', onMove);
+                    window.addEventListener('pointerup', onUp);
+                  }}
+                  className="absolute -right-[4px] bottom-0 w-0 h-0 border-l-[4px] border-r-[4px] border-b-[5px] border-l-transparent border-r-transparent border-b-[#555] hover:border-b-[#2b579a] cursor-ew-resize"
                 />
 
                 {['1', '2', '3', '4', '5', '6', '7'].map((inch) => (

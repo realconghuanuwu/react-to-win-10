@@ -30,10 +30,10 @@ interface DesktopIconProps {
   registerRef: (id: string, el: HTMLDivElement | null) => void;
 }
 
-const SIZE_CLASSES: Record<DesktopIconSize, { cell: string; img: string }> = {
-  small: { cell: 'w-[68px] h-[64px]', img: 'w-7 h-7' },
-  medium: { cell: 'w-[74px] h-[76px]', img: 'w-9 h-9' },
-  large: { cell: 'w-[86px] h-[94px]', img: 'w-12 h-12' },
+const SIZE_CLASSES: Record<DesktopIconSize, { cell: string; img: string; text: string }> = {
+  small: { cell: 'w-[74px] min-h-[68px]', img: 'w-7 h-7', text: 'text-[11px] leading-[13px]' },
+  medium: { cell: 'w-[80px] min-h-[78px]', img: 'w-9 h-9', text: 'text-[11.5px] leading-[13.5px]' },
+  large: { cell: 'w-[92px] min-h-[96px]', img: 'w-12 h-12', text: 'text-[12px] leading-[14.5px]' },
 };
 
 export function DesktopIcon({
@@ -54,7 +54,7 @@ export function DesktopIcon({
   onCancelRename,
   registerRef,
 }: DesktopIconProps) {
-  const { cell, img } = SIZE_CLASSES[iconSize];
+  const { cell, img, text } = SIZE_CLASSES[iconSize];
   const [draft, setDraft] = useState(item.name);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -80,6 +80,7 @@ export function DesktopIcon({
       role="button"
       tabIndex={0}
       aria-label={item.name}
+      title={item.name}
       data-desktop-icon={item.id}
       style={{ left, top }}
       onClick={handleClick}
@@ -110,13 +111,13 @@ export function DesktopIcon({
         cell,
         isDragging || isCut ? 'opacity-40' : 'opacity-100',
         isDropTarget
-          ? 'bg-[#0078d7]/45 border-[#66baff] ring-1 ring-[#66baff]'
+          ? 'bg-[#0078d7]/45 border-[#66baff] ring-1 ring-[#66baff] z-10'
           : isSelected
-            ? 'bg-white/22 border-white/45'
+            ? 'bg-white/22 border-white/45 z-10'
             : 'border-transparent hover:bg-white/12 hover:border-white/25',
       ].join(' ')}
     >
-      <div className="relative mb-1 pointer-events-none">
+      <div className="relative mb-[3px] shrink-0 pointer-events-none">
         <img
           src={item.icon}
           alt={item.name}
@@ -155,7 +156,9 @@ export function DesktopIcon({
         />
       ) : (
         <span
-          className="w-full text-center text-[11.5px] leading-[14px] text-white font-normal line-clamp-2 break-words [text-shadow:0_1px_2px_rgba(0,0,0,0.95),0_0_4px_rgba(0,0,0,0.65)]"
+          className={`w-full text-center ${text} text-white font-normal [overflow-wrap:anywhere] [text-shadow:0_1px_2px_rgba(0,0,0,0.95),0_0_4px_rgba(0,0,0,0.65)] ${
+            isSelected ? '' : 'line-clamp-2'
+          }`}
         >
           {item.name}
         </span>

@@ -12,6 +12,7 @@ import { notify } from '../../store/useNotificationStore';
 import { OfficeHomeScreen } from './OfficeHomeScreen';
 import { ExcelRibbon } from './ExcelRibbon';
 import { WordRibbon } from './WordRibbon';
+import { OfficeBackstageOverlay, OfficeStatusBar } from './OfficeBackstageAndStatus';
 
 export type OfficeMode = 'word' | 'excel';
 
@@ -75,6 +76,7 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
   const [importError, setImportError] = useState('');
   const [exporting, setExporting] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [backstageOpen, setBackstageOpen] = useState(false);
   const [officeUniverApi, setOfficeUniverApi] = useState<ReturnType<typeof createUniver>['univerAPI'] | null>(null);
   const notificationSource = mode === 'word' ? 'Word' : 'Excel';
 
@@ -414,6 +416,7 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
           onSaveToLocal={handleSaveToLocal}
           onSwitchToWord={() => openApp('word')}
           onStatus={setStatusMessage}
+          onOpenBackstage={() => setBackstageOpen(true)}
         />
       ) : (
         <WordRibbon
@@ -429,6 +432,7 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
           onSaveToLocal={handleSaveToLocal}
           onSwitchToExcel={() => openApp('excel')}
           onStatus={setStatusMessage}
+          onOpenBackstage={() => setBackstageOpen(true)}
         />
       )}
 
@@ -455,6 +459,25 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
           className={`flex-1 min-w-0 min-h-0 h-full relative overflow-hidden ${mode === 'excel' ? 'bg-white excel-univer-host' : 'bg-[#e6e6e6] word-univer-host'}`}
         />
       </div>
+
+      <OfficeStatusBar mode={mode} univerApi={officeUniverApi} onStatus={setStatusMessage} />
+
+      {backstageOpen && (
+        <OfficeBackstageOverlay
+          mode={mode}
+          documentTitle={documentTitle}
+          saving={saving}
+          exporting={exporting}
+          onClose={() => setBackstageOpen(false)}
+          onBackHome={() => setView('home')}
+          onNew={handleNew}
+          onOpen={showOpen}
+          onSaveToWin10={handleSaveToWin10}
+          onSaveToLocal={handleSaveToLocal}
+          onSwitchApp={() => openApp(mode === 'word' ? 'excel' : 'word')}
+          onStatus={setStatusMessage}
+        />
+      )}
       </>}
 
       {/* Open Saved File Modal */}

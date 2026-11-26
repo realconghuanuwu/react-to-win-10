@@ -529,7 +529,7 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
   desktopPropertiesTargetId: null,
   shortcutModalOpen: false,
   startMenuTileIds: [
-    'word', 'excel', 'this-pc', 'explorer', 'calculator', 'chrome', 'edge', 'photos', 'notepad',
+    'word', 'excel', 'this-pc', 'explorer', 'calculator', 'chrome', 'photos', 'notepad',
     'store', 'settings', 'paint', 'snip', 'recycle-bin',
   ],
   tileSizes: {},

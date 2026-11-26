@@ -7,6 +7,8 @@ import {
   type FormEvent,
 } from 'react';
 import { useDesktopStore } from '../../store/useDesktopStore';
+import { formatStorageBytes, useFileSystemStore } from '../../store/useFileSystemStore';
+import { openVirtualFile } from '../../utils/openVirtualFile';
 import { YouTubeView } from './YouTubeView';
 
 interface ChromeAppProps {
@@ -20,6 +22,7 @@ interface BrowserTab {
   history: string[];
   historyIndex: number;
   isLoading: boolean;
+  isIncognito?: boolean;
   hasAudio?: boolean;
   isMuted?: boolean;
   reloadNonce: number;
@@ -92,14 +95,15 @@ const QUICK_SHORTCUTS: Array<{
   { title: 'Archive.org', url: 'https://archive.org', badge: 'A', color: '#428bca' },
 ];
 
-function createTab(url = 'chrome://newtab'): BrowserTab {
+function createTab(url = 'chrome://newtab', isIncognito = false): BrowserTab {
   return {
     id: `tab-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    title: url === 'chrome://newtab' ? 'New Tab' : getDisplayTitle(url),
+    title: url === 'chrome://newtab' ? (isIncognito ? 'New Incognito Tab' : 'New Tab') : getDisplayTitle(url),
     url,
     history: [url],
     historyIndex: 0,
     isLoading: !url.startsWith('chrome://'),
+    isIncognito,
     reloadNonce: 0,
   };
 }
@@ -108,6 +112,7 @@ function getDisplayTitle(url: string): string {
   if (url === 'chrome://newtab') return 'New Tab';
   if (url === 'chrome://history') return 'History';
   if (url === 'chrome://bookmarks') return 'Bookmarks';
+  if (url === 'chrome://downloads') return 'Downloads';
   try {
     const parsed = new URL(url);
     return parsed.hostname.replace(/^www\./, '') || url;
@@ -198,8 +203,10 @@ function loadStoredHistory(): HistoryEntry[] {
 
 export function ChromeApp({ windowId }: ChromeAppProps) {
   const setWindowTitle = useDesktopStore((state) => state.setWindowTitle);
+  const openApp = useDesktopStore((state) => state.openApp);
   const systemVolume = useDesktopStore((state) => state.systemVolume);
   const isSystemMuted = useDesktopStore((state) => state.isSystemMuted);
+  const fsNodes = useFileSystemStore((state) => state.nodes);
 
   const [tabs, setTabs] = useState<BrowserTab[]>(() => [createTab('chrome://newtab')]);
   const [activeTabId, setActiveTabId] = useState<string>(() => tabs[0].id);
@@ -210,6 +217,7 @@ export function ChromeApp({ windowId }: ChromeAppProps) {
   const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>(loadStoredHistory);
   const [showBookmarksBar, setShowBookmarksBar] = useState<boolean>(true);
   const [showMenu, setShowMenu] = useState<boolean>(false);
+  const [zoomPct, setZoomPct] = useState<number>(100);
   const [proxyAvailable, setProxyAvailable] = useState<boolean>(false);
   const [proxyEnabled, setProxyEnabled] = useState<boolean>(true);
   const [iframeError, setIframeError] = useState<string | null>(null);
@@ -314,19 +322,20 @@ export function ChromeApp({ windowId }: ChromeAppProps) {
         }),
       );
 
-      if (!isInternal) {
+      const sourceTab = tabs.find((t) => t.id === tabId);
+      if (!isInternal && !sourceTab?.isIncognito) {
         recordHistory(targetUrl);
       }
     },
-    [recordHistory],
+    [recordHistory, tabs],
   );
 
-  const openNewTab = useCallback((url = 'chrome://newtab') => {
-    const tab = createTab(url);
+  const openNewTab = useCallback((url = 'chrome://newtab', isIncognito = false) => {
+    const tab = createTab(url, isIncognito);
     setTabs((prev) => [...prev, tab]);
     setActiveTabId(tab.id);
     setShowMenu(false);
-    if (!url.startsWith('chrome://')) {
+    if (!url.startsWith('chrome://') && !isIncognito) {
       recordHistory(url);
     }
   }, [recordHistory]);
@@ -491,7 +500,7 @@ export function ChromeApp({ windowId }: ChromeAppProps) {
       onClick={() => showMenu && setShowMenu(false)}
     >
       {/* Chrome Tab Strip */}
-      <div className="flex items-end h-[36px] bg-[#dee1e6] px-2 pt-1.5 gap-1 overflow-x-auto shrink-0">
+      <div className={`flex items-end h-[36px] px-2 pt-1.5 gap-1 overflow-x-auto shrink-0 ${activeTab.isIncognito ? 'bg-[#202124]' : 'bg-[#dee1e6]'}`}>
         {tabs.map((tab) => {
           const isTabActive = tab.id === activeTab.id;
           const favicon = getFaviconUrl(tab.url);
@@ -502,8 +511,12 @@ export function ChromeApp({ windowId }: ChromeAppProps) {
               className={[
                 'group relative flex items-center gap-2 h-[30px] min-w-[110px] max-w-[220px] flex-1 px-3 rounded-t-lg text-[12px] cursor-default transition-colors',
                 isTabActive
-                  ? 'bg-white text-[#202124] shadow-[0_0_4px_rgba(0,0,0,0.08)]'
-                  : 'bg-transparent text-[#444746] hover:bg-[#e8eaed]',
+                  ? tab.isIncognito
+                    ? 'bg-[#35363a] text-white'
+                    : 'bg-white text-[#202124] shadow-[0_0_4px_rgba(0,0,0,0.08)]'
+                  : activeTab.isIncognito
+                    ? 'bg-transparent text-[#9aa0a6] hover:bg-[#292a2d]'
+                    : 'bg-transparent text-[#444746] hover:bg-[#e8eaed]',
               ].join(' ')}
             >
               {tab.isLoading ? (
@@ -723,6 +736,13 @@ export function ChromeApp({ windowId }: ChromeAppProps) {
               </button>
               <button
                 type="button"
+                onClick={() => openNewTab('chrome://newtab', true)}
+                className="w-full text-left px-4 py-1.5 hover:bg-[#f1f3f4]"
+              >
+                New Incognito tab
+              </button>
+              <button
+                type="button"
                 onClick={() => {
                   setShowMenu(false);
                   navigateTab(activeTab.id, 'chrome://bookmarks');
@@ -735,12 +755,43 @@ export function ChromeApp({ windowId }: ChromeAppProps) {
                 type="button"
                 onClick={() => {
                   setShowMenu(false);
+                  navigateTab(activeTab.id, 'chrome://downloads');
+                }}
+                className="w-full text-left px-4 py-1.5 hover:bg-[#f1f3f4]"
+              >
+                Downloads
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMenu(false);
                   navigateTab(activeTab.id, 'chrome://history');
                 }}
                 className="w-full text-left px-4 py-1.5 hover:bg-[#f1f3f4]"
               >
                 History
               </button>
+              <div className="my-1 border-t border-[#e8eaed]" />
+              <div className="flex items-center justify-between px-4 py-1.5">
+                <span>Zoom</span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setZoomPct((z) => Math.max(75, z - 10))}
+                    className="w-6 h-6 rounded hover:bg-[#f1f3f4] font-semibold"
+                  >
+                    −
+                  </button>
+                  <span className="w-9 text-center text-[12px] tabular-nums">{zoomPct}%</span>
+                  <button
+                    type="button"
+                    onClick={() => setZoomPct((z) => Math.min(150, z + 10))}
+                    className="w-6 h-6 rounded hover:bg-[#f1f3f4] font-semibold"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
               <div className="my-1 border-t border-[#e8eaed]" />
               <button
                 type="button"
@@ -810,7 +861,31 @@ export function ChromeApp({ windowId }: ChromeAppProps) {
               }
             >
               {tab.url === 'chrome://newtab' ? (
-                <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center px-6 py-10 bg-white">
+                tab.isIncognito ? (
+                  <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center px-6 py-10 bg-[#202124] text-[#e8eaed]">
+                    <div className="w-16 h-16 rounded-full bg-[#35363a] flex items-center justify-center text-[28px] mb-4">
+                      🕶
+                    </div>
+                    <h1 className="text-[24px] font-normal mb-2">You&apos;ve gone incognito</h1>
+                    <p className="text-[13px] text-[#9aa0a6] max-w-[440px] text-center mb-6">
+                      Pages visited in this tab are not recorded in your Chrome history.
+                    </p>
+                    <form
+                      onSubmit={handleNewTabSearch}
+                      className="w-full max-w-[480px] flex items-center h-[42px] px-4 rounded-full bg-[#303134] border border-[#5f6368] gap-3"
+                    >
+                      <span className="text-[#9aa0a6] text-[14px]">🔍</span>
+                      <input
+                        type="text"
+                        value={newTabQuery}
+                        onChange={(e) => setNewTabQuery(e.target.value)}
+                        placeholder={`Search ${SEARCH_ENGINES[searchEngine].label} or type a URL`}
+                        className="flex-1 bg-transparent outline-none text-[14px] text-white placeholder:text-[#9aa0a6] select-text"
+                      />
+                    </form>
+                  </div>
+                ) : (
+                <div style={{ zoom: `${zoomPct}%` }} className="flex-1 overflow-y-auto flex flex-col items-center justify-center px-6 py-10 bg-white">
                   {/* Google Wordmark */}
                   <div className="text-[54px] font-semibold tracking-tight mb-6 select-none">
                     <span className="text-[#4285f4]">G</span>
@@ -877,6 +952,50 @@ export function ChromeApp({ windowId }: ChromeAppProps) {
                       </button>
                     ))}
                   </div>
+                </div>
+                )
+              ) : tab.url === 'chrome://downloads' ? (
+                <div style={{ zoom: `${zoomPct}%` }} className="flex-1 overflow-y-auto p-6 max-w-[760px] w-full mx-auto">
+                  <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#dadce0]">
+                    <h1 className="text-[20px] font-medium text-[#202124]">Downloads</h1>
+                    <button
+                      type="button"
+                      onClick={() => openApp('explorer', 'downloads')}
+                      className="px-3 py-1 rounded text-[12px] text-[#1a73e8] hover:bg-[#e8f0fe]"
+                    >
+                      Open Downloads folder
+                    </button>
+                  </div>
+                  {(() => {
+                    const dlFiles = Object.values(fsNodes)
+                      .filter((n) => n.kind === 'file' && n.parentId === 'downloads')
+                      .sort((a, b) => b.modifiedAt - a.modifiedAt);
+                    if (dlFiles.length === 0) {
+                      return <p className="text-[13px] text-[#5f6368] py-8 text-center">No files in Downloads folder yet.</p>;
+                    }
+                    return (
+                      <div className="space-y-2">
+                        {dlFiles.map((file) => (
+                          <div key={file.id} className="flex items-center justify-between gap-3 px-3.5 py-2.5 rounded border border-[#e8eaed] hover:bg-[#f8f9fa]">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <img src={file.icon} alt="" className="w-6 h-6 object-contain shrink-0" />
+                              <div className="min-w-0">
+                                <div className="text-[13px] font-medium text-[#202124] truncate">{file.name}</div>
+                                <div className="text-[11px] text-[#5f6368]">{formatStorageBytes(file.sizeBytes ?? 0)}</div>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => openVirtualFile(file.id)}
+                              className="px-3 py-1 rounded text-[12px] bg-[#e8f0fe] text-[#1a73e8] hover:bg-[#d2e3fc] shrink-0"
+                            >
+                              Open
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
               ) : tabYoutubeMode && proxyAvailable ? (
                 <YouTubeView
