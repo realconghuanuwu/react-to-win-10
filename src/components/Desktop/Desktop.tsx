@@ -15,6 +15,7 @@ import {
   type GridSlot,
 } from '../../store/useDesktopStore';
 import { useFileSystemStore } from '../../store/useFileSystemStore';
+import { getWallpaperCssProps } from '../Apps/PersonalizationSettingsApp';
 import { DesktopContextMenu } from './DesktopContextMenu';
 import { DesktopIcon, type DesktopDisplayItem } from './DesktopIcon';
 
@@ -51,6 +52,7 @@ export function Desktop() {
   const isRefreshing = useDesktopStore((state) => state.isRefreshing);
   const iconSize = useDesktopStore((state) => state.iconSize);
   const showDesktopIcons = useDesktopStore((state) => state.showDesktopIcons);
+  const personalization = useDesktopStore((state) => state.personalizationSettings);
   const selectIcon = useDesktopStore((state) => state.selectIcon);
   const setSelectedIconIds = useDesktopStore((state) => state.setSelectedIconIds);
   const clearSelection = useDesktopStore((state) => state.clearSelection);
@@ -323,6 +325,13 @@ export function Desktop() {
       }
     : null;
 
+  const wallpaperStyle = getWallpaperCssProps(
+    personalization.backgroundType,
+    personalization.wallpaper,
+    personalization.backgroundFit,
+    personalization.solidColor,
+  );
+
   return (
     <div
       ref={containerRef}
@@ -330,13 +339,13 @@ export function Desktop() {
       onMouseDown={handleMouseDown}
       onContextMenu={handleContextMenu}
       style={{
-        backgroundImage: 'url("/assets/wallpapers/win10-hero.jpg")',
+        ...wallpaperStyle,
         top: insets.top,
         bottom: insets.bottom,
         left: insets.left,
         right: insets.right,
       }}
-      className="fixed bg-cover bg-center bg-no-repeat overflow-hidden"
+      className="fixed overflow-hidden"
     >
       {showDesktopIcons && (
         <div

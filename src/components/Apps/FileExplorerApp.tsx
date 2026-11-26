@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { useDesktopStore } from '../../store/useDesktopStore';
 import {
   QUICK_ACCESS_IDS,
@@ -36,6 +36,7 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
   const emptyRecycleBin = useFileSystemStore((state) => state.emptyRecycleBin);
   const refreshStorageStats = useFileSystemStore((state) => state.refreshStorageStats);
 
+  const activeAppId = useDesktopStore((state) => state.activeAppId);
   const setWindowTitle = useDesktopStore((state) => state.setWindowTitle);
   const explorerStartFolderId = useDesktopStore((state) => state.explorerStartFolderId);
   const openNotepadFile = useDesktopStore((state) => state.openNotepadFile);
@@ -101,44 +102,99 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
     return () => window.removeEventListener('pointerdown', handleClose);
   }, [contextMenu]);
 
-  const navigateTo = (folderId: string) => {
-    if (!nodes[folderId]) return;
-    if (folderId === currentFolderId) {
+  const navigateTo = useCallback(
+    (folderId: string) => {
+      if (!nodes[folderId]) return;
+      if (folderId === currentFolderId) {
+        setSelectedIds([]);
+        return;
+      }
+      const nextHistory = history.slice(0, historyIdx + 1);
+      nextHistory.push(folderId);
+      setHistory(nextHistory);
+      setHistoryIdx(nextHistory.length - 1);
       setSelectedIds([]);
-      return;
-    }
-    const nextHistory = history.slice(0, historyIdx + 1);
-    nextHistory.push(folderId);
-    setHistory(nextHistory);
-    setHistoryIdx(nextHistory.length - 1);
-    setSelectedIds([]);
-    setRenamingId(null);
-    setSearchQuery('');
-    setContextMenu(null);
-  };
+      setRenamingId(null);
+      setSearchQuery('');
+      setContextMenu(null);
+    },
+    [nodes, currentFolderId, history, historyIdx],
+  );
 
   const canGoBack = historyIdx > 0;
   const canGoForward = historyIdx < history.length - 1;
   const canGoUp = currentNode?.parentId !== null;
 
-  const goBack = () => {
+  const goBack = useCallback(() => {
     if (!canGoBack) return;
-    setHistoryIdx((idx) => idx - 1);
+    setHistoryIdx((idx) => Math.max(0, idx - 1));
     setSelectedIds([]);
     setRenamingId(null);
-  };
+  }, [canGoBack]);
 
-  const goForward = () => {
+  const goForward = useCallback(() => {
     if (!canGoForward) return;
-    setHistoryIdx((idx) => idx + 1);
+    setHistoryIdx((idx) => Math.min(history.length - 1, idx + 1));
     setSelectedIds([]);
     setRenamingId(null);
-  };
+  }, [canGoForward, history.length]);
 
-  const goUp = () => {
+  const goUp = useCallback(() => {
     if (!currentNode?.parentId) return;
     navigateTo(currentNode.parentId);
-  };
+  }, [currentNode?.parentId, navigateTo]);
+
+  useEffect(() => {
+    const isThisExplorerTarget = (target: EventTarget | null) =>
+      activeAppId === windowId ||
+      Boolean(rootRef.current && target instanceof Node && rootRef.current.contains(target));
+
+    const handleMouseDown = (e: globalThis.MouseEvent) => {
+      if ((e.button === 3 || e.button === 4) && isThisExplorerTarget(e.target)) {
+        e.preventDefault();
+      }
+    };
+
+    const handleMouseUp = (e: globalThis.MouseEvent) => {
+      if (!isThisExplorerTarget(e.target)) return;
+      if (e.button === 3) {
+        e.preventDefault();
+        goBack();
+      } else if (e.button === 4) {
+        e.preventDefault();
+        goForward();
+      }
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (activeAppId !== windowId) return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      const isEditingText = tag === 'INPUT' || tag === 'TEXTAREA';
+
+      if ((e.altKey && e.key === 'ArrowLeft') || e.key === 'BrowserBack') {
+        e.preventDefault();
+        goBack();
+      } else if ((e.altKey && e.key === 'ArrowRight') || e.key === 'BrowserForward') {
+        e.preventDefault();
+        goForward();
+      } else if (e.altKey && e.key === 'ArrowUp') {
+        e.preventDefault();
+        goUp();
+      } else if (e.key === 'Backspace' && !isEditingText) {
+        e.preventDefault();
+        goBack();
+      }
+    };
+
+    window.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [activeAppId, windowId, goBack, goForward, goUp]);
 
   const breadcrumbs = useMemo(() => {
     const chain: FsNode[] = [];

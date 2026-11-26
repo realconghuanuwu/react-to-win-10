@@ -116,6 +116,7 @@ export function Taskbar() {
     else if (q.includes('down')) openApp('explorer', 'downloads');
     else if (q.includes('pic')) openApp('explorer', 'pictures');
     else if (q.includes('calc')) openApp('calculator');
+    else if (q.includes('chrome') || q.includes('web') || q.includes('http')) openApp('chrome');
     else if (q.includes('set')) openApp('settings');
     else openApp('explorer');
   };

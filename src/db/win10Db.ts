@@ -1,5 +1,11 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
-import type { FsNode, GridSlot, PersistedDesktopLayout, TaskbarSettings } from './types';
+import type {
+  FsNode,
+  GridSlot,
+  PersistedDesktopLayout,
+  PersonalizationSettings,
+  TaskbarSettings,
+} from './types';
 
 export const DB_NAME = 'win10_db';
 export const DB_VERSION = 1;
@@ -7,6 +13,7 @@ export const FS_STORE = 'fs_nodes';
 export const DESKTOP_STORE = 'desktop_state';
 export const DESKTOP_LAYOUT_KEY = 'desktop_layout_v1';
 export const TASKBAR_SETTINGS_KEY = 'taskbar_settings_v1';
+export const PERSONALIZATION_SETTINGS_KEY = 'personalization_settings_v1';
 
 const LEGACY_FS_STORAGE_KEY = 'win10_fs_v1';
 const LEGACY_DESKTOP_LAYOUT_KEY = 'win10_desktop_layout_v1';
@@ -22,6 +29,11 @@ interface TaskbarSettingsRecord {
   settings: TaskbarSettings;
 }
 
+interface PersonalizationSettingsRecord {
+  key: string;
+  settings: PersonalizationSettings;
+}
+
 interface Win10DBSchema extends DBSchema {
   [FS_STORE]: {
     key: string;
@@ -29,7 +41,7 @@ interface Win10DBSchema extends DBSchema {
   };
   [DESKTOP_STORE]: {
     key: string;
-    value: DesktopLayoutRecord | TaskbarSettingsRecord;
+    value: DesktopLayoutRecord | TaskbarSettingsRecord | PersonalizationSettingsRecord;
   };
 }
 
@@ -258,6 +270,45 @@ export async function loadOrInitTaskbarSettings(
       };
     }
     await saveTaskbarSettings(defaultSettings);
+    return defaultSettings;
+  } catch {
+    return defaultSettings;
+  }
+}
+
+export async function savePersonalizationSettings(
+  settings: PersonalizationSettings,
+): Promise<void> {
+  return enqueueWrite(async () => {
+    const db = await getDb();
+    if (!db) return;
+    await db.put(DESKTOP_STORE, {
+      key: PERSONALIZATION_SETTINGS_KEY,
+      settings,
+    });
+  });
+}
+
+export async function loadOrInitPersonalizationSettings(
+  defaultSettings: PersonalizationSettings,
+): Promise<PersonalizationSettings> {
+  const db = await getDb();
+  if (!db) return defaultSettings;
+
+  try {
+    const stored = (await db.get(DESKTOP_STORE, PERSONALIZATION_SETTINGS_KEY)) as
+      | PersonalizationSettingsRecord
+      | undefined;
+    if (stored?.settings) {
+      return {
+        ...defaultSettings,
+        ...stored.settings,
+        customWallpapers: Array.isArray(stored.settings.customWallpapers)
+          ? stored.settings.customWallpapers
+          : defaultSettings.customWallpapers,
+      };
+    }
+    await savePersonalizationSettings(defaultSettings);
     return defaultSettings;
   } catch {
     return defaultSettings;

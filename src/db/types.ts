@@ -54,3 +54,24 @@ export interface TaskbarSettings {
   };
   pinnedAppIds: string[];
 }
+
+export type PersonalizationTab =
+  | 'Background'
+  | 'Colors'
+  | 'Lock screen'
+  | 'Themes'
+  | 'Fonts'
+  | 'Start'
+  | 'Taskbar';
+
+export type BackgroundType = 'picture' | 'solid';
+export type BackgroundFit = 'fill' | 'fit' | 'stretch' | 'tile' | 'center';
+
+export interface PersonalizationSettings {
+  backgroundType: BackgroundType;
+  wallpaper: string;
+  customWallpapers: string[];
+  backgroundFit: BackgroundFit;
+  solidColor: string;
+  accentColor: string;
+}

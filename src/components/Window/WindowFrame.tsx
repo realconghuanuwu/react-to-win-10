@@ -5,9 +5,10 @@ import {
   type AppWindow,
 } from '../../store/useDesktopStore';
 import { CalculatorApp } from '../Apps/CalculatorApp';
+import { ChromeApp } from '../Apps/ChromeApp';
 import { FileExplorerApp } from '../Apps/FileExplorerApp';
 import { NotepadApp } from '../Apps/NotepadApp';
-import { TaskbarSettingsApp } from '../Apps/TaskbarSettingsApp';
+import { PersonalizationSettingsApp } from '../Apps/PersonalizationSettingsApp';
 import { TaskManagerApp } from '../Apps/TaskManagerApp';
 
 type ResizeDirection = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
@@ -247,7 +248,7 @@ export function WindowFrame({ win }: WindowFrameProps) {
         ].join(' ')}
       >
         <div className="flex items-center gap-2 min-w-0 pr-2">
-          {(isDarkApp || win.id === 'notepad' || win.id === 'task-manager') && (
+          {(isDarkApp || win.id === 'notepad' || win.id === 'task-manager' || win.id === 'chrome') && (
             <img
               src={win.icon}
               alt=""
@@ -316,10 +317,12 @@ export function WindowFrame({ win }: WindowFrameProps) {
 
       {win.id === 'calculator' ? (
         <CalculatorApp isActive={isActive} />
+      ) : win.id === 'chrome' ? (
+        <ChromeApp windowId={win.id} />
       ) : win.id === 'notepad' ? (
         <NotepadApp windowId={win.id} />
       ) : win.id === 'settings' ? (
-        <TaskbarSettingsApp />
+        <PersonalizationSettingsApp />
       ) : win.id === 'task-manager' ? (
         <TaskManagerApp />
       ) : isExplorerApp ? (

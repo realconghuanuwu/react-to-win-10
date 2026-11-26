@@ -66,6 +66,7 @@ export function TaskbarContextMenu() {
   const updateTaskbarSettings = useDesktopStore((state) => state.updateTaskbarSettings);
   const togglePinToTaskbar = useDesktopStore((state) => state.togglePinToTaskbar);
   const openApp = useDesktopStore((state) => state.openApp);
+  const openSettingsTab = useDesktopStore((state) => state.openSettingsTab);
   const closeWindow = useDesktopStore((state) => state.closeWindow);
   const cascadeWindows = useDesktopStore((state) => state.cascadeWindows);
   const stackWindows = useDesktopStore((state) => state.stackWindows);
@@ -538,7 +539,7 @@ export function TaskbarContextMenu() {
         role="menuitem"
         onMouseEnter={() => setOpenSubmenu(null)}
         onClick={() => {
-          openApp('settings');
+          openSettingsTab('Taskbar');
           setTaskbarContextMenuPos(null);
         }}
         className={rowClass}

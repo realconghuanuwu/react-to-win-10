@@ -43,6 +43,13 @@ export const DESKTOP_APPS: DesktopAppItem[] = [
     showOnDesktop: true,
   },
   {
+    id: 'chrome',
+    name: 'Google Chrome',
+    icon: '/assets/icons/chrome.svg',
+    pinnedToTaskbar: true,
+    showOnDesktop: true,
+  },
+  {
     id: 'edge',
     name: 'Microsoft Edge',
     icon: '/assets/icons/edge.png',
@@ -94,7 +101,7 @@ export interface StartTileGroup {
 export const START_TILE_GROUPS: StartTileGroup[] = [
   {
     title: 'Productivity',
-    appIds: ['this-pc', 'explorer', 'calculator', 'edge', 'photos', 'notepad'],
+    appIds: ['this-pc', 'explorer', 'calculator', 'chrome', 'edge', 'photos', 'notepad'],
   },
   {
     title: 'Explore',

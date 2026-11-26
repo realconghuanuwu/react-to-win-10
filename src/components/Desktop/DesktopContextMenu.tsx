@@ -64,6 +64,7 @@ export function DesktopContextMenu({
   const setIconPosition = useDesktopStore((state) => state.setIconPosition);
   const setRenamingIconId = useDesktopStore((state) => state.setRenamingIconId);
   const setSelectedIconIds = useDesktopStore((state) => state.setSelectedIconIds);
+  const openSettingsTab = useDesktopStore((state) => state.openSettingsTab);
 
   const nodes = useFileSystemStore((state) => state.nodes);
   const createFolder = useFileSystemStore((state) => state.createFolder);
@@ -534,7 +535,7 @@ export function DesktopContextMenu({
         type="button"
         role="menuitem"
         onMouseEnter={() => setOpenSubmenu(null)}
-        onClick={() => setContextMenuPos(null)}
+        onClick={() => openSettingsTab('Background')}
         className={`${rowClass} w-full`}
       >
         <div className="flex items-center">

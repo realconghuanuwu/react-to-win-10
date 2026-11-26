@@ -3,16 +3,20 @@ import { DESKTOP_APPS, type DesktopAppItem } from '../data/desktopApps';
 import type {
   GridSlot,
   PersistedDesktopLayout,
+  PersonalizationSettings,
+  PersonalizationTab,
   TaskbarSettings,
 } from '../db/types';
 import {
   loadOrInitDesktopLayout,
+  loadOrInitPersonalizationSettings,
   loadOrInitTaskbarSettings,
   saveDesktopLayout,
+  savePersonalizationSettings,
   saveTaskbarSettings,
 } from '../db/win10Db';
 
-export type { GridSlot, TaskbarSettings };
+export type { GridSlot, PersonalizationSettings, PersonalizationTab, TaskbarSettings };
 
 export interface TaskbarContextMenuPosition {
   x: number;
@@ -52,7 +56,7 @@ export const DEFAULT_TASKBAR_SETTINGS: TaskbarSettings = {
     network: true,
     actionCenter: true,
   },
-  pinnedAppIds: ['explorer', 'store'],
+  pinnedAppIds: ['explorer', 'store', 'chrome'],
 };
 
 export function getTaskbarThickness(settings: TaskbarSettings): number {
@@ -109,10 +113,21 @@ const DEFAULT_POSITIONS: Record<string, GridSlot> = {
   explorer: { col: 0, row: 2 },
   calculator: { col: 0, row: 3 },
   store: { col: 0, row: 4 },
+  chrome: { col: 0, row: 5 },
+};
+
+export const DEFAULT_PERSONALIZATION_SETTINGS: PersonalizationSettings = {
+  backgroundType: 'picture',
+  wallpaper: '/assets/wallpapers/win10-hero.jpg',
+  customWallpapers: [],
+  backgroundFit: 'fill',
+  solidColor: '#0078d7',
+  accentColor: '#0078d7',
 };
 
 let hasLayoutMutated = false;
 let hasTaskbarMutated = false;
+let hasPersonalizationMutated = false;
 let desktopHydratePromise: Promise<void> | null = null;
 
 function persistLayout(layout: PersistedDesktopLayout) {
@@ -123,6 +138,11 @@ function persistLayout(layout: PersistedDesktopLayout) {
 function persistTaskbarSettings(settings: TaskbarSettings) {
   hasTaskbarMutated = true;
   void saveTaskbarSettings(settings);
+}
+
+function persistPersonalizationSettings(settings: PersonalizationSettings) {
+  hasPersonalizationMutated = true;
+  void savePersonalizationSettings(settings);
 }
 
 interface DesktopState {
@@ -148,6 +168,8 @@ interface DesktopState {
   contextMenuPos: ContextMenuPosition | null;
   taskbarContextMenuPos: TaskbarContextMenuPosition | null;
   taskbarSettings: TaskbarSettings;
+  personalizationSettings: PersonalizationSettings;
+  settingsActiveTab: PersonalizationTab;
   hydrate: () => Promise<void>;
   selectIcon: (id: string, multiSelect: boolean) => void;
   setSelectedIconIds: (ids: string[]) => void;
@@ -157,6 +179,13 @@ interface DesktopState {
   updateTaskbarSettings: (
     updater: Partial<TaskbarSettings> | ((prev: TaskbarSettings) => TaskbarSettings),
   ) => void;
+  updatePersonalizationSettings: (
+    updater:
+      | Partial<PersonalizationSettings>
+      | ((prev: PersonalizationSettings) => PersonalizationSettings),
+  ) => void;
+  setSettingsActiveTab: (tab: PersonalizationTab) => void;
+  openSettingsTab: (tab: PersonalizationTab) => void;
   togglePinToTaskbar: (appId: string) => void;
   toggleStartMenu: () => void;
   closeStartMenu: () => void;
@@ -209,10 +238,11 @@ function createInitialBounds(
   const isCalc = appId === 'calculator';
   const isExplorer = appId === 'explorer' || appId === 'this-pc' || appId === 'recycle-bin';
   const isSettings = appId === 'settings';
-  const targetWidth = isCalc ? 340 : isExplorer ? 940 : isSettings ? 840 : DEFAULT_WIDTH;
-  const targetHeight = isCalc ? 540 : isExplorer ? 600 : isSettings ? 580 : DEFAULT_HEIGHT;
-  const minWidth = isCalc ? 320 : isExplorer ? 620 : isSettings ? 580 : 320;
-  const minHeight = isCalc ? 480 : isExplorer ? 400 : isSettings ? 420 : 220;
+  const isChrome = appId === 'chrome';
+  const targetWidth = isCalc ? 340 : isChrome ? 1040 : isExplorer ? 940 : isSettings ? 840 : DEFAULT_WIDTH;
+  const targetHeight = isCalc ? 540 : isChrome ? 680 : isExplorer ? 600 : isSettings ? 580 : DEFAULT_HEIGHT;
+  const minWidth = isCalc ? 320 : isChrome ? 520 : isExplorer ? 620 : isSettings ? 580 : 320;
+  const minHeight = isCalc ? 480 : isChrome ? 380 : isExplorer ? 400 : isSettings ? 420 : 220;
 
   const width = Math.min(targetWidth, Math.max(minWidth, vw - 48));
   const height = Math.min(targetHeight, Math.max(minHeight, vh - 48));
@@ -272,18 +302,24 @@ export const useDesktopStore = create<DesktopState>((set) => ({
   contextMenuPos: null,
   taskbarContextMenuPos: null,
   taskbarSettings: DEFAULT_TASKBAR_SETTINGS,
+  personalizationSettings: DEFAULT_PERSONALIZATION_SETTINGS,
+  settingsActiveTab: 'Background',
 
   hydrate: () => {
     if (desktopHydratePromise) return desktopHydratePromise;
     desktopHydratePromise = (async () => {
-      const [layout, taskbarSettings] = await Promise.all([
+      const [layout, taskbarSettings, personalizationSettings] = await Promise.all([
         loadOrInitDesktopLayout(DEFAULT_POSITIONS),
         loadOrInitTaskbarSettings(DEFAULT_TASKBAR_SETTINGS),
+        loadOrInitPersonalizationSettings(DEFAULT_PERSONALIZATION_SETTINGS),
       ]);
       set((state) => {
         const nextLabels = hasLayoutMutated ? state.shortcutLabels : layout.labels;
         const nextPositions = hasLayoutMutated ? state.iconPositions : layout.positions;
         const nextTaskbar = hasTaskbarMutated ? state.taskbarSettings : taskbarSettings;
+        const nextPersonalization = hasPersonalizationMutated
+          ? state.personalizationSettings
+          : personalizationSettings;
         const currentWindows = state.windows.map((w) => ({
           ...w,
           title: nextLabels[w.id] ?? w.title,
@@ -292,6 +328,7 @@ export const useDesktopStore = create<DesktopState>((set) => ({
           iconPositions: nextPositions,
           shortcutLabels: nextLabels,
           taskbarSettings: nextTaskbar,
+          personalizationSettings: nextPersonalization,
           windows: currentWindows,
           isHydrated: true,
         };
@@ -351,6 +388,73 @@ export const useDesktopStore = create<DesktopState>((set) => ({
           : { ...state.taskbarSettings, ...updater };
       persistTaskbarSettings(nextSettings);
       return { taskbarSettings: nextSettings };
+    }),
+
+  updatePersonalizationSettings: (updater) =>
+    set((state) => {
+      const nextSettings =
+        typeof updater === 'function'
+          ? updater(state.personalizationSettings)
+          : { ...state.personalizationSettings, ...updater };
+      persistPersonalizationSettings(nextSettings);
+      return { personalizationSettings: nextSettings };
+    }),
+
+  setSettingsActiveTab: (settingsActiveTab) => set({ settingsActiveTab }),
+
+  openSettingsTab: (tab) =>
+    set((state) => {
+      const app = state.apps.find((item) => item.id === 'settings');
+      if (!app) return state;
+      const displayTitle = state.shortcutLabels[app.id] ?? app.name;
+      const nextZ = state.topZIndex + 1;
+      const existing = state.windows.find((w) => w.id === 'settings');
+
+      if (existing) {
+        return {
+          settingsActiveTab: tab,
+          windows: state.windows.map((w) =>
+            w.id === 'settings'
+              ? { ...w, title: displayTitle, isMinimized: false, zIndex: nextZ }
+              : w,
+          ),
+          activeAppId: 'settings',
+          topZIndex: nextZ,
+          contextMenuPos: null,
+          taskbarContextMenuPos: null,
+          isStartMenuOpen: false,
+          isTaskViewOpen: false,
+        };
+      }
+
+      const { bounds, minWidth, minHeight } = createInitialBounds(
+        'settings',
+        state.windows.length,
+        state.taskbarSettings,
+      );
+      return {
+        settingsActiveTab: tab,
+        windows: [
+          ...state.windows,
+          {
+            id: 'settings',
+            title: displayTitle,
+            icon: app.icon,
+            ...bounds,
+            minWidth,
+            minHeight,
+            zIndex: nextZ,
+            isMinimized: false,
+            isMaximized: false,
+          },
+        ],
+        activeAppId: 'settings',
+        topZIndex: nextZ,
+        contextMenuPos: null,
+        taskbarContextMenuPos: null,
+        isStartMenuOpen: false,
+        isTaskViewOpen: false,
+      };
     }),
 
   togglePinToTaskbar: (appId) =>
