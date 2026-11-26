@@ -6,13 +6,15 @@ import { Win10SearchIcon, Win10StartLogo } from './Win10Icons';
 
 export function Taskbar() {
   const apps = useDesktopStore((state) => state.apps);
-  const openAppIds = useDesktopStore((state) => state.openAppIds);
+  const windows = useDesktopStore((state) => state.windows);
   const activeAppId = useDesktopStore((state) => state.activeAppId);
   const toggleTaskbarApp = useDesktopStore((state) => state.toggleTaskbarApp);
 
+  const openIds = useMemo(() => new Set(windows.map((w) => w.id)), [windows]);
+
   const taskbarApps = useMemo(
-    () => apps.filter((app) => app.pinnedToTaskbar || openAppIds.includes(app.id)),
-    [apps, openAppIds],
+    () => apps.filter((app) => app.pinnedToTaskbar || openIds.has(app.id)),
+    [apps, openIds],
   );
 
   return (
@@ -44,7 +46,7 @@ export function Taskbar() {
 
         <nav aria-label="Pinned applications" className="flex items-center h-full">
           {taskbarApps.map((app) => {
-            const isOpen = openAppIds.includes(app.id);
+            const isOpen = openIds.has(app.id);
             const isActive = activeAppId === app.id;
 
             return (
