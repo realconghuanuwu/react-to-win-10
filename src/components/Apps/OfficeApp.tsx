@@ -8,6 +8,7 @@ import '@univerjs/preset-docs-core/lib/index.css';
 import '@univerjs/preset-sheets-core/lib/index.css';
 import { useDesktopStore } from '../../store/useDesktopStore';
 import { useFileSystemStore } from '../../store/useFileSystemStore';
+import { WordHomeScreen } from './WordHomeScreen';
 
 export type OfficeMode = 'word' | 'excel';
 
@@ -15,6 +16,8 @@ interface OfficeAppProps {
   mode: OfficeMode;
   windowId: string;
 }
+
+type WordView = 'home' | 'editor';
 
 const DEFAULT_DOC_TITLE = 'Document1.unidoc';
 const DEFAULT_SHEET_TITLE = 'Book1.unisheet';
@@ -77,17 +80,19 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
 
   const extension = mode === 'word' ? '.unidoc' : '.unisheet';
   const defaultTitle = mode === 'word' ? DEFAULT_DOC_TITLE : DEFAULT_SHEET_TITLE;
-  const brandColor = mode === 'word' ? '#185abd' : '#107c41';
-  const brandHover = mode === 'word' ? 'hover:bg-[#144b9e]' : 'hover:bg-[#0c6434]';
+  const brandColor = mode === 'word' ? '#2b579a' : '#107c41';
+  const brandHover = mode === 'word' ? 'hover:bg-[#1a3c70]' : 'hover:bg-[#0c6434]';
   const appLabel = mode === 'word' ? 'Word' : 'Excel';
 
+  // Word shows home screen on first open; Excel goes straight to editor
+  const [view, setView] = useState<WordView>(mode === 'word' ? 'home' : 'editor');
   const [currentFileId, setCurrentFileId] = useState<string | null>(null);
   const [documentTitle, setDocumentTitle] = useState<string>(defaultTitle);
   const [statusMessage, setStatusMessage] = useState<string>('');
   const [showOpenModal, setShowOpenModal] = useState<boolean>(false);
   const [reloadNonce, setReloadNonce] = useState<number>(0);
 
-  // Sync incoming file open request from Desktop or File Explorer
+  // Sync incoming file open from Desktop / Explorer => go straight to editor
   useEffect(() => {
     if (officeOpenNonce === 0) return;
     if (officeActiveFileId && nodes[officeActiveFileId]?.kind === 'file') {
@@ -100,22 +105,31 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
       if (matchesMode) {
         setCurrentFileId(targetNode.id);
         setDocumentTitle(targetNode.name);
+        setView('editor');
         setReloadNonce((n) => n + 1);
       }
     }
   }, [officeActiveFileId, officeOpenNonce, mode, nodes]);
 
+  // Update window title bar
   useEffect(() => {
-    setWindowTitle(windowId, `${documentTitle} - ${appLabel}`);
-  }, [windowId, documentTitle, appLabel, setWindowTitle]);
+    if (view === 'home') {
+      setWindowTitle(windowId, appLabel);
+    } else {
+      setWindowTitle(windowId, `${documentTitle} - ${appLabel}`);
+    }
+  }, [windowId, documentTitle, appLabel, view, setWindowTitle]);
 
+  // Auto-dismiss status toast
   useEffect(() => {
     if (!statusMessage) return;
     const timer = window.setTimeout(() => setStatusMessage(''), 2600);
     return () => window.clearTimeout(timer);
   }, [statusMessage]);
 
+  // Mount / remount UniverJS when entering editor view
   useEffect(() => {
+    if (view !== 'editor') return;
     const host = containerRef.current;
     if (!host) return;
 
@@ -128,29 +142,18 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
       mode === 'word'
         ? createUniver({
             locale: LocaleType.EN_US,
-            locales: {
-              [LocaleType.EN_US]: mergeLocales(UniverPresetDocsCoreEnUS),
-            },
-            presets: [
-              UniverDocsCorePreset({
-                container,
-              }),
-            ],
+            locales: { [LocaleType.EN_US]: mergeLocales(UniverPresetDocsCoreEnUS) },
+            presets: [UniverDocsCorePreset({ container })],
           })
         : createUniver({
             locale: LocaleType.EN_US,
-            locales: {
-              [LocaleType.EN_US]: mergeLocales(UniverPresetSheetsCoreEnUS),
-            },
-            presets: [
-              UniverSheetsCorePreset({
-                container,
-              }),
-            ],
+            locales: { [LocaleType.EN_US]: mergeLocales(UniverPresetSheetsCoreEnUS) },
+            presets: [UniverSheetsCorePreset({ container })],
           });
 
     univerApiRef.current = univerAPI;
 
+    // Load saved snapshot or create fresh document
     let parsedSnapshot: Record<string, unknown> | null = null;
     if (currentFileId) {
       const fileNode = useFileSystemStore.getState().nodes[currentFileId];
@@ -176,15 +179,17 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
         try {
           doc.insertText(
             0,
-            'Welcome to Microsoft Word (UniverJS)\rStart typing your document here. You can format headings, bold/italic text, lists, alignment, and save your work directly to your Windows 10 PC.',
+            'Welcome to Microsoft Word (UniverJS)\rStart typing your document here.',
           );
         } catch {
-          // Keep default blank document if insertText is not ready
+          // blank document is fine
         }
       }
     } else {
       const sheetData = (parsedSnapshot ??
-        createStarterWorkbookSnapshot(documentTitle)) as Parameters<typeof univerAPI.createWorkbook>[0];
+        createStarterWorkbookSnapshot(documentTitle)) as Parameters<
+        typeof univerAPI.createWorkbook
+      >[0];
       univerAPI.createWorkbook(sheetData);
     }
 
@@ -195,10 +200,10 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
         container.remove();
       });
     };
-    // Re-initialize Univer instance only when mode or explicitly requested file reload changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, reloadNonce]);
+  }, [mode, view, reloadNonce]);
 
+  // All saved Word/Excel files from virtual FS
   const savedOfficeFiles = useMemo(() => {
     return Object.values(nodes)
       .filter((n) => {
@@ -211,40 +216,69 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
       .sort((a, b) => b.modifiedAt - a.modifiedAt);
   }, [nodes, mode]);
 
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
   const getCurrentSnapshotJson = (): string | null => {
     const api = univerApiRef.current;
     if (!api) return null;
     if (mode === 'word') {
-      const activeDoc = api.getActiveDocument();
-      if (!activeDoc) return null;
-      return JSON.stringify(activeDoc.save());
+      const doc = api.getActiveDocument();
+      if (!doc) return null;
+      return JSON.stringify(doc.save());
     }
-    const activeWorkbook = api.getActiveWorkbook();
-    if (!activeWorkbook) return null;
-    return JSON.stringify(activeWorkbook.save());
+    const wb = api.getActiveWorkbook();
+    if (!wb) return null;
+    return JSON.stringify(wb.save());
   };
 
   const handleNew = () => {
     setCurrentFileId(null);
     setDocumentTitle(defaultTitle);
+    setView('editor');
     setReloadNonce((n) => n + 1);
-    setStatusMessage(`Created blank ${appLabel} file`);
   };
 
-  const handleSave = () => {
+  const handleNewWelcome = () => {
+    setCurrentFileId(null);
+    setDocumentTitle(defaultTitle);
+    setView('editor');
+    setReloadNonce((n) => n + 1);
+  };
+
+  const handleOpenFileFromHome = (fileId: string) => {
+    const target = nodes[fileId];
+    if (!target || target.kind !== 'file') return;
+    setCurrentFileId(target.id);
+    setDocumentTitle(target.name);
+    setView('editor');
+    setReloadNonce((n) => n + 1);
+  };
+
+  const handleOpenSavedFile = (fileId: string) => {
+    const target = nodes[fileId];
+    if (!target || target.kind !== 'file') return;
+    setCurrentFileId(target.id);
+    setDocumentTitle(target.name);
+    setShowOpenModal(false);
+    setView('editor');
+    setReloadNonce((n) => n + 1);
+    setStatusMessage(`Opened ${target.name}`);
+  };
+
+  /** Save to virtual Win10 FS (Documents folder) */
+  const handleSaveToWin10 = () => {
     const serialized = getCurrentSnapshotJson();
-    if (!serialized) {
-      setStatusMessage('Nothing to save');
-      return;
-    }
+    if (!serialized) { setStatusMessage('Nothing to save'); return; }
 
     if (currentFileId && nodes[currentFileId]?.kind === 'file') {
       updateFileContent(currentFileId, serialized);
-      setStatusMessage(`Saved "${nodes[currentFileId].name}"`);
+      setStatusMessage(`Saved "${nodes[currentFileId].name}" to This PC`);
       return;
     }
 
-    const baseName = documentTitle.replace(/\.(unidoc|unisheet)$/i, '') || (mode === 'word' ? 'Document' : 'Book');
+    const baseName =
+      documentTitle.replace(/\.(unidoc|unisheet)$/i, '') ||
+      (mode === 'word' ? 'Document' : 'Book');
     const desiredName = `${baseName}${extension}`;
     const targetFolderId = nodes.documents ? 'documents' : 'desktop';
     const createdId = createTextFile(targetFolderId, desiredName, serialized);
@@ -254,35 +288,38 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
       if (createdNode) {
         setDocumentTitle(createdNode.name);
         setStatusMessage(`Saved to Documents\\${createdNode.name}`);
-      } else {
-        setStatusMessage('Saved to Documents');
       }
     }
   };
 
-  const handleExportJson = () => {
+  /** Download to real local PC as .json (browser download API) */
+  const handleSaveToLocal = () => {
     const serialized = getCurrentSnapshotJson();
-    if (!serialized) return;
+    if (!serialized) { setStatusMessage('Nothing to save'); return; }
     const blob = new Blob([serialized], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${documentTitle}.json`;
-    link.click();
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${documentTitle.replace(/\.(unidoc|unisheet)$/i, '')}.json`;
+    a.click();
     URL.revokeObjectURL(url);
-    setStatusMessage(`Exported ${documentTitle}.json`);
+    setStatusMessage('Saved to your local PC (Downloads)');
   };
 
-  const handleOpenSavedFile = (fileId: string) => {
-    const target = nodes[fileId];
-    if (!target || target.kind !== 'file') return;
-    setCurrentFileId(target.id);
-    setDocumentTitle(target.name);
-    setShowOpenModal(false);
-    setReloadNonce((n) => n + 1);
-    setStatusMessage(`Opened ${target.name}`);
-  };
+  // ── Render: Word Home Screen ──────────────────────────────────────────────
+  if (mode === 'word' && view === 'home') {
+    return (
+      <WordHomeScreen
+        recentFiles={savedOfficeFiles}
+        onNewBlank={handleNew}
+        onNewWelcome={handleNewWelcome}
+        onOpenFile={handleOpenFileFromHome}
+        onOpenFromPc={() => setShowOpenModal(true)}
+      />
+    );
+  }
 
+  // ── Render: Editor (Word or Excel) ────────────────────────────────────────
   return (
     <div
       data-testid={`office-${mode}-app`}
@@ -294,6 +331,20 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
         className="h-9 px-3 flex items-center justify-between text-white text-[12px] shrink-0 border-b border-black/15"
       >
         <div className="flex items-center gap-2 min-w-0">
+          {/* Back to Home (Word only) */}
+          {mode === 'word' && (
+            <button
+              type="button"
+              onClick={() => setView('home')}
+              title="Back to Word Home"
+              className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] transition-colors cursor-default ${brandHover}`}
+            >
+              <svg viewBox="0 0 10 10" width="10" height="10" fill="currentColor" aria-hidden="true">
+                <path d="M6.5 1.5l-4 3.5 4 3.5" stroke="currentColor" strokeWidth="1.2" fill="none" strokeLinecap="round" />
+              </svg>
+              Home
+            </button>
+          )}
           <img
             src={mode === 'word' ? '/assets/icons/word.svg' : '/assets/icons/excel.svg'}
             alt=""
@@ -328,17 +379,17 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
           </button>
           <button
             type="button"
-            onClick={handleSave}
+            onClick={handleSaveToWin10}
             className={`px-2.5 py-1 rounded text-[12px] font-medium bg-white/15 transition-colors cursor-default ${brandHover}`}
           >
-            Save
+            Save to Win 10
           </button>
           <button
             type="button"
-            onClick={handleExportJson}
-            className={`px-2.5 py-1 rounded text-[12px] transition-colors cursor-default ${brandHover}`}
+            onClick={handleSaveToLocal}
+            className={`px-2.5 py-1 rounded text-[12px] font-medium bg-white/15 transition-colors cursor-default ${brandHover}`}
           >
-            Export
+            Save to PC
           </button>
           <span className="mx-1 h-4 w-[1px] bg-white/25" />
           <button
@@ -385,7 +436,7 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
             <div className="p-3 max-h-64 overflow-y-auto win10-scroll">
               {savedOfficeFiles.length === 0 ? (
                 <p className="text-[12px] text-[#666666] py-6 text-center">
-                  No saved {extension} files found in your PC yet. Click <strong>Save</strong> to store a file in Documents.
+                  No saved {extension} files found. Click <strong>Save to Win 10</strong> to store a file in Documents.
                 </p>
               ) : (
                 <ul className="divide-y divide-[#eeeeee]">

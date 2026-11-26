@@ -8,9 +8,10 @@ import type {
 } from './types';
 
 export const DB_NAME = 'win10_db';
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 export const FS_STORE = 'fs_nodes';
 export const DESKTOP_STORE = 'desktop_state';
+export const MEDIA_STORE = 'media_blobs';
 export const DESKTOP_LAYOUT_KEY = 'desktop_layout_v1';
 export const TASKBAR_SETTINGS_KEY = 'taskbar_settings_v1';
 export const PERSONALIZATION_SETTINGS_KEY = 'personalization_settings_v1';
@@ -34,6 +35,11 @@ interface PersonalizationSettingsRecord {
   settings: PersonalizationSettings;
 }
 
+interface MediaBlobRecord {
+  id: string;
+  blob: Blob;
+}
+
 interface Win10DBSchema extends DBSchema {
   [FS_STORE]: {
     key: string;
@@ -42,6 +48,10 @@ interface Win10DBSchema extends DBSchema {
   [DESKTOP_STORE]: {
     key: string;
     value: DesktopLayoutRecord | TaskbarSettingsRecord | PersonalizationSettingsRecord;
+  };
+  [MEDIA_STORE]: {
+    key: string;
+    value: MediaBlobRecord;
   };
 }
 
@@ -60,6 +70,9 @@ function getDb(): Promise<IDBPDatabase<Win10DBSchema> | null> {
         }
         if (!db.objectStoreNames.contains(DESKTOP_STORE)) {
           db.createObjectStore(DESKTOP_STORE, { keyPath: 'key' });
+        }
+        if (!db.objectStoreNames.contains(MEDIA_STORE)) {
+          db.createObjectStore(MEDIA_STORE, { keyPath: 'id' });
         }
       },
     }).catch(() => null);
@@ -313,4 +326,31 @@ export async function loadOrInitPersonalizationSettings(
   } catch {
     return defaultSettings;
   }
+}
+
+export async function saveMediaBlob(id: string, blob: Blob): Promise<void> {
+  return enqueueWrite(async () => {
+    const db = await getDb();
+    if (!db) return;
+    await db.put(MEDIA_STORE, { id, blob });
+  });
+}
+
+export async function getMediaBlob(id: string): Promise<Blob | null> {
+  const db = await getDb();
+  if (!db) return null;
+  try {
+    const rec = await db.get(MEDIA_STORE, id);
+    return rec?.blob ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function deleteMediaBlob(id: string): Promise<void> {
+  return enqueueWrite(async () => {
+    const db = await getDb();
+    if (!db) return;
+    await db.delete(MEDIA_STORE, id);
+  });
 }

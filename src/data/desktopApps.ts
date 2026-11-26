@@ -105,6 +105,18 @@ export const DESKTOP_APPS: DesktopAppItem[] = [
     icon: '/assets/icons/settings.png',
     showOnDesktop: false,
   },
+  {
+    id: 'yt-downloader',
+    name: 'YouTube Downloader',
+    icon: '/assets/icons/yt-downloader.svg',
+    showOnDesktop: true,
+  },
+  {
+    id: 'media-player',
+    name: 'Media Player',
+    icon: '/assets/icons/media-file.svg',
+    showOnDesktop: false,
+  },
 ];
 
 export interface StartTileGroup {

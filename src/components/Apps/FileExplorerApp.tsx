@@ -6,6 +6,7 @@ import {
   useFileSystemStore,
   type FsNode,
 } from '../../store/useFileSystemStore';
+import { getFileTypeInfo } from '../../utils/fileTypes';
 import {
   ExplorerContextMenu,
   type ExplorerSortField,
@@ -41,6 +42,7 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
   const explorerStartFolderId = useDesktopStore((state) => state.explorerStartFolderId);
   const openNotepadFile = useDesktopStore((state) => state.openNotepadFile);
   const openOfficeFile = useDesktopStore((state) => state.openOfficeFile);
+  const openMediaFile = useDesktopStore((state) => state.openMediaFile);
 
   const [history, setHistory] = useState<string[]>([initialFolderId]);
   const [historyIdx, setHistoryIdx] = useState(0);
@@ -307,6 +309,14 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
         openOfficeFile('word', item.id);
       } else if (lower.endsWith('.unisheet') || lower.endsWith('.xls') || lower.endsWith('.xlsx')) {
         openOfficeFile('excel', item.id);
+      } else if (
+        item.blobId ||
+        lower.endsWith('.mp4') ||
+        lower.endsWith('.webm') ||
+        lower.endsWith('.mp3') ||
+        lower.endsWith('.m4a')
+      ) {
+        openMediaFile(item.id);
       } else {
         openNotepadFile(item.id);
       }
@@ -528,8 +538,8 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
               </div>
             )}
             {viewMode === 'tiles' && (
-              <div className="text-[11px] text-[#999999]">
-                {item.kind === 'file' ? 'Text Document' : 'File folder'}
+              <div className="text-[11px] text-[#999999] truncate">
+                {getFileTypeInfo(item).label}
               </div>
             )}
           </div>
@@ -541,7 +551,7 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
               {new Date(item.modifiedAt).toLocaleDateString()}
             </span>
             <span className="text-[11.5px] text-[#999999] truncate">
-              {item.kind === 'file' ? 'Text Document' : 'File folder'}
+              {getFileTypeInfo(item).label}
             </span>
           </>
         )}

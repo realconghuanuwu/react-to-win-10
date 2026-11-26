@@ -63,6 +63,7 @@ export function Desktop() {
   const openApp = useDesktopStore((state) => state.openApp);
   const openNotepadFile = useDesktopStore((state) => state.openNotepadFile);
   const openOfficeFile = useDesktopStore((state) => state.openOfficeFile);
+  const openMediaFile = useDesktopStore((state) => state.openMediaFile);
 
   const fsNodes = useFileSystemStore((state) => state.nodes);
   const renameFsNode = useFileSystemStore((state) => state.renameNode);
@@ -185,6 +186,13 @@ export function Desktop() {
           openOfficeFile('word', item.id);
         } else if (lower.endsWith('.unisheet') || lower.endsWith('.xls') || lower.endsWith('.xlsx')) {
           openOfficeFile('excel', item.id);
+        } else if (
+          lower.endsWith('.mp4') ||
+          lower.endsWith('.webm') ||
+          lower.endsWith('.mp3') ||
+          lower.endsWith('.m4a')
+        ) {
+          openMediaFile(item.id);
         } else {
           openNotepadFile(item.id);
         }

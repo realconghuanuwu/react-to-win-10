@@ -2,10 +2,12 @@ import { create } from 'zustand';
 import type { FsNode, FsNodeKind } from '../db/types';
 import {
   DEFAULT_IDB_QUOTA_BYTES,
+  deleteMediaBlob,
   estimateStorageStats,
   loadOrInitFileSystemNodes,
   measureNodesBytes,
   saveAllFileSystemNodes,
+  saveMediaBlob,
 } from '../db/win10Db';
 
 export type { FsNode, FsNodeKind };
@@ -198,6 +200,11 @@ interface FileSystemState {
     desiredName?: string,
     initialContent?: string,
   ) => string | null;
+  createMediaFile: (
+    parentId: string,
+    fileName: string,
+    blob: Blob,
+  ) => Promise<string | null>;
   updateFileContent: (id: string, content: string) => void;
   renameNode: (id: string, newName: string) => void;
   deleteNodes: (ids: string[]) => void;
@@ -271,6 +278,47 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
 
       const storageUsedBytes = persistNodes(nextNodes);
       set({ nodes: nextNodes, storageUsedBytes: Math.max(state.storageUsedBytes, storageUsedBytes) });
+      return id;
+    },
+
+    createMediaFile: async (parentId, fileName, blob) => {
+      const state = get();
+      const parent = state.nodes[parentId];
+      if (!parent || (parent.kind !== 'folder' && parent.kind !== 'drive')) {
+        return null;
+      }
+
+      const trimmed = fileName.trim() || 'download.mp4';
+      const dotIdx = trimmed.lastIndexOf('.');
+      const baseName = dotIdx > 0 ? trimmed.slice(0, dotIdx) : trimmed;
+      const ext = dotIdx > 0 ? trimmed.slice(dotIdx) : '';
+      const name = getUniqueNodeName(state.nodes, parentId, baseName, ext);
+      const id = `media-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const blobId = id;
+      const timestamp = Date.now();
+
+      await saveMediaBlob(blobId, blob);
+
+      const latest = get();
+      const nextNodes: Record<string, FsNode> = {
+        ...latest.nodes,
+        [id]: {
+          id,
+          parentId,
+          name,
+          kind: 'file',
+          icon: '/assets/icons/media-file.svg',
+          mimeType: blob.type || 'video/mp4',
+          sizeBytes: blob.size,
+          blobId,
+          isSystem: false,
+          createdAt: timestamp,
+          modifiedAt: timestamp,
+        },
+      };
+
+      const storageUsedBytes = persistNodes(nextNodes);
+      set({ nodes: nextNodes, storageUsedBytes: Math.max(latest.storageUsedBytes, storageUsedBytes) });
       return id;
     },
 
@@ -386,6 +434,10 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
           changed = true;
           if (target.parentId === 'recycle-bin') {
             for (const descId of collectDescendants(id)) {
+              const desc = nextNodes[descId];
+              if (desc?.blobId) {
+                void deleteMediaBlob(desc.blobId);
+              }
               delete nextNodes[descId];
             }
           } else {
@@ -443,7 +495,13 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
           if (n.parentId === 'recycle-bin') collect(n.id);
         });
         if (toRemove.size === 0) return state;
-        toRemove.forEach((id) => delete nextNodes[id]);
+        toRemove.forEach((id) => {
+          const node = nextNodes[id];
+          if (node?.blobId) {
+            void deleteMediaBlob(node.blobId);
+          }
+          delete nextNodes[id];
+        });
         const storageUsedBytes = persistNodes(nextNodes);
         return { nodes: nextNodes, storageUsedBytes };
       });

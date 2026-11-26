@@ -116,6 +116,7 @@ const DEFAULT_POSITIONS: Record<string, GridSlot> = {
   chrome: { col: 0, row: 5 },
   word: { col: 1, row: 0 },
   excel: { col: 1, row: 1 },
+  'yt-downloader': { col: 1, row: 2 },
 };
 
 export const DEFAULT_PERSONALIZATION_SETTINGS: PersonalizationSettings = {
@@ -163,6 +164,8 @@ interface DesktopState {
   notepadOpenNonce: number;
   officeActiveFileId: string | null;
   officeOpenNonce: number;
+  mediaPlayerFileId: string | null;
+  mediaPlayerOpenNonce: number;
   iconSize: DesktopIconSize;
   showDesktopIcons: boolean;
   sortBy: DesktopSortField;
@@ -211,6 +214,7 @@ interface DesktopState {
   openApp: (id: string, explorerFolderId?: string) => void;
   openNotepadFile: (fileId: string | null) => void;
   openOfficeFile: (appId: 'word' | 'excel', fileId: string | null) => void;
+  openMediaFile: (fileId: string | null) => void;
   toggleTaskbarApp: (id: string) => void;
   focusWindow: (id: string) => void;
   minimizeWindow: (id: string) => void;
@@ -305,6 +309,8 @@ export const useDesktopStore = create<DesktopState>((set) => ({
   notepadOpenNonce: 0,
   officeActiveFileId: null,
   officeOpenNonce: 0,
+  mediaPlayerFileId: null,
+  mediaPlayerOpenNonce: 0,
   iconSize: 'medium',
   showDesktopIcons: true,
   sortBy: 'default',
@@ -766,6 +772,56 @@ export const useDesktopStore = create<DesktopState>((set) => ({
         isStartMenuOpen: false,
         officeActiveFileId: fileId,
         officeOpenNonce: state.officeOpenNonce + 1,
+      };
+    }),
+
+  openMediaFile: (fileId) =>
+    set((state) => {
+      const app = state.apps.find((item) => item.id === 'media-player');
+      if (!app) return state;
+
+      const nextZ = state.topZIndex + 1;
+      const existing = state.windows.find((w) => w.id === 'media-player');
+
+      if (existing) {
+        return {
+          windows: state.windows.map((w) =>
+            w.id === 'media-player' ? { ...w, isMinimized: false, zIndex: nextZ } : w,
+          ),
+          activeAppId: 'media-player',
+          topZIndex: nextZ,
+          contextMenuPos: null,
+          isStartMenuOpen: false,
+          mediaPlayerFileId: fileId,
+          mediaPlayerOpenNonce: state.mediaPlayerOpenNonce + 1,
+        };
+      }
+
+      const { bounds, minWidth, minHeight } = createInitialBounds(
+        'media-player',
+        state.windows.length,
+        state.taskbarSettings,
+      );
+      const newWindow: AppWindow = {
+        id: 'media-player',
+        title: app.name,
+        icon: app.icon,
+        ...bounds,
+        minWidth,
+        minHeight,
+        zIndex: nextZ,
+        isMinimized: false,
+        isMaximized: false,
+      };
+
+      return {
+        windows: [...state.windows, newWindow],
+        activeAppId: 'media-player',
+        topZIndex: nextZ,
+        contextMenuPos: null,
+        isStartMenuOpen: false,
+        mediaPlayerFileId: fileId,
+        mediaPlayerOpenNonce: state.mediaPlayerOpenNonce + 1,
       };
     }),
 

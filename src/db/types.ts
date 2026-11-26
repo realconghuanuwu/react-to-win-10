@@ -7,6 +7,9 @@ export interface FsNode {
   kind: FsNodeKind;
   icon: string;
   content?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  blobId?: string;
   isSystem?: boolean;
   createdAt: number;
   modifiedAt: number;

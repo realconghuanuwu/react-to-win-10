@@ -7,9 +7,11 @@ import {
 import { CalculatorApp } from '../Apps/CalculatorApp';
 import { ChromeApp } from '../Apps/ChromeApp';
 import { FileExplorerApp } from '../Apps/FileExplorerApp';
+import { MediaPlayerApp } from '../Apps/MediaPlayerApp';
 import { NotepadApp } from '../Apps/NotepadApp';
 import { PersonalizationSettingsApp } from '../Apps/PersonalizationSettingsApp';
 import { TaskManagerApp } from '../Apps/TaskManagerApp';
+import { YouTubeDownloaderApp } from '../Apps/YouTubeDownloaderApp';
 
 const OfficeApp = lazy(() =>
   import('../Apps/OfficeApp').then((mod) => ({ default: mod.OfficeApp })),
@@ -48,7 +50,11 @@ export function WindowFrame({ win }: WindowFrameProps) {
   const isExplorerApp =
     win.id === 'explorer' || win.id === 'this-pc' || win.id === 'recycle-bin';
   const isDarkApp =
-    win.id === 'calculator' || isExplorerApp || win.id === 'settings';
+    win.id === 'calculator' ||
+    isExplorerApp ||
+    win.id === 'settings' ||
+    win.id === 'yt-downloader' ||
+    win.id === 'media-player';
   const dragSessionRef = useRef<boolean>(false);
 
   const handleTitleBarPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -347,6 +353,10 @@ export function WindowFrame({ win }: WindowFrameProps) {
         <PersonalizationSettingsApp />
       ) : win.id === 'task-manager' ? (
         <TaskManagerApp />
+      ) : win.id === 'yt-downloader' ? (
+        <YouTubeDownloaderApp />
+      ) : win.id === 'media-player' ? (
+        <MediaPlayerApp windowId={win.id} />
       ) : isExplorerApp ? (
         <FileExplorerApp
           windowId={win.id}
