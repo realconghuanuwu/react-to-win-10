@@ -1,3 +1,14 @@
+export const RECYCLE_BIN_EMPTY_ICON = '/assets/icons/trash-can.png';
+export const RECYCLE_BIN_FULL_ICON = '/assets/icons/trash-can-full.svg';
+
+export function getRecycleBinIcon(hasItems: boolean): string {
+  return hasItems ? RECYCLE_BIN_FULL_ICON : RECYCLE_BIN_EMPTY_ICON;
+}
+
+export function resolveDesktopAppIcon(app: Pick<DesktopAppItem, 'id' | 'icon'>, binHasItems: boolean): string {
+  return app.id === 'recycle-bin' ? getRecycleBinIcon(binHasItems) : app.icon;
+}
+
 export interface DesktopAppItem {
   id: string;
   name: string;

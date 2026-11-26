@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { getRecycleBinIcon } from '../data/desktopApps';
 import type { FsNode, FsNodeKind, ShortcutTarget } from '../db/types';
 import { getOwningDriveId } from '../utils/fileStorage';
 import {
@@ -277,6 +278,18 @@ export function waitForFileSystemWrite(): Promise<void> {
 }
 
 export const useFileSystemStore = create<FileSystemState>((set, get) => {
+  const syncRecycleBinIcon = (nextNodes: Record<string, FsNode>): Record<string, FsNode> => {
+    const bin = nextNodes['recycle-bin'];
+    if (!bin) return nextNodes;
+    const hasTrash = Object.values(nextNodes).some((n) => n.parentId === 'recycle-bin');
+    const nextIcon = getRecycleBinIcon(hasTrash);
+    if (bin.icon === nextIcon) return nextNodes;
+    return {
+      ...nextNodes,
+      'recycle-bin': { ...bin, icon: nextIcon },
+    };
+  };
+
   const persistNodes = (nextNodes: Record<string, FsNode>, removedIds?: Iterable<string>) => {
     hasUserMutated = true;
     // Copies share immutable media blobs until the last file referencing one is removed.
@@ -312,9 +325,10 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
       const { undoStack } = get();
       if (undoStack.length === 0) return false;
       const last = undoStack[undoStack.length - 1];
-      const storageUsedBytes = persistNodes(last.nodes);
+      const syncedNodes = syncRecycleBinIcon(last.nodes);
+      const storageUsedBytes = persistNodes(syncedNodes);
       set({
-        nodes: last.nodes,
+        nodes: syncedNodes,
         undoStack: undoStack.slice(0, -1),
         storageUsedBytes,
       });
@@ -421,7 +435,7 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
       if (hydratePromise) return hydratePromise;
       hydratePromise = (async () => {
         const loadedNodes = await loadOrInitFileSystemNodes(DEFAULT_NODES);
-        const targetNodes = hasUserMutated ? get().nodes : loadedNodes;
+        const targetNodes = syncRecycleBinIcon(hasUserMutated ? get().nodes : loadedNodes);
         const stats = await estimateStorageStats(targetNodes);
         set({
           nodes: targetNodes,
@@ -757,8 +771,9 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
           }
         }
         if (!changed) return state;
-        const storageUsedBytes = persistNodes(nextNodes, removedIds);
-        return { nodes: nextNodes, storageUsedBytes };
+        const syncedNodes = syncRecycleBinIcon(nextNodes);
+        const storageUsedBytes = persistNodes(syncedNodes, removedIds);
+        return { nodes: syncedNodes, storageUsedBytes };
       });
     },
 
@@ -798,10 +813,11 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
         }
 
         if (!changed) return state;
-        const storageUsedBytes = persistNodes(nextNodes, removedIds);
+        const syncedNodes = syncRecycleBinIcon(nextNodes);
+        const storageUsedBytes = persistNodes(syncedNodes, removedIds);
         const shouldPushUndo = ids.some((id) => state.nodes[id]?.parentId !== 'recycle-bin');
         return {
-          nodes: nextNodes,
+          nodes: syncedNodes,
           storageUsedBytes,
           undoStack: shouldPushUndo
             ? [...state.undoStack, { label: 'Delete', nodes: state.nodes }].slice(-15)
@@ -831,9 +847,10 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
           changed = true;
         }
         if (!changed) return state;
-        const storageUsedBytes = persistNodes(nextNodes);
+        const syncedNodes = syncRecycleBinIcon(nextNodes);
+        const storageUsedBytes = persistNodes(syncedNodes);
         return {
-          nodes: nextNodes,
+          nodes: syncedNodes,
           storageUsedBytes,
           undoStack: [...state.undoStack, { label: 'Restore', nodes: state.nodes }].slice(-15),
         };
@@ -857,8 +874,9 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
         toRemove.forEach((id) => {
           delete nextNodes[id];
         });
-        const storageUsedBytes = persistNodes(nextNodes, toRemove);
-        return { nodes: nextNodes, storageUsedBytes };
+        const syncedNodes = syncRecycleBinIcon(nextNodes);
+        const storageUsedBytes = persistNodes(syncedNodes, toRemove);
+        return { nodes: syncedNodes, storageUsedBytes };
       });
     },
 
@@ -871,6 +889,12 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
     },
   };
 });
+
+export function useRecycleBinHasItems(): boolean {
+  return useFileSystemStore((state) =>
+    Object.values(state.nodes).some((node) => node.parentId === 'recycle-bin'),
+  );
+}
 
 export function useCanPasteFiles(parentId: string): boolean {
   return useFileSystemStore((state) => getPasteSources(state.nodes, state.clipboard, parentId).length > 0);

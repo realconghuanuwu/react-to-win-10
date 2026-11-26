@@ -1,4 +1,6 @@
 import { Suspense, lazy, type PointerEvent as ReactPointerEvent } from 'react';
+import { resolveDesktopAppIcon } from '../../data/desktopApps';
+import { useRecycleBinHasItems } from '../../store/useFileSystemStore';
 import {
   getTaskbarInsets,
   useDesktopStore,
@@ -47,6 +49,7 @@ interface WindowFrameProps {
 
 export function WindowFrame({ win, onSnapPreview, onSnapDrop }: WindowFrameProps) {
   const activeAppId = useDesktopStore((state) => state.activeAppId);
+  const binHasItems = useRecycleBinHasItems();
   const explorerStartFolderId = useDesktopStore((state) => state.explorerStartFolderId);
   const taskbarSettings = useDesktopStore((state) => state.taskbarSettings);
   const focusWindow = useDesktopStore((state) => state.focusWindow);
@@ -340,7 +343,7 @@ export function WindowFrame({ win, onSnapPreview, onSnapDrop }: WindowFrameProps
             appId === 'word' ||
             appId === 'excel') && (
             <img
-              src={win.icon}
+              src={resolveDesktopAppIcon({ id: appId, icon: win.icon }, binHasItems)}
               alt=""
               draggable={false}
               className="w-4 h-4 object-contain shrink-0 pointer-events-none"

@@ -5,7 +5,9 @@ import {
   PopoverTrigger,
   Tooltip,
 } from '@fluentui/react-components';
+import { resolveDesktopAppIcon } from '../../data/desktopApps';
 import { getTaskbarThickness, useDesktopStore, type AppWindow } from '../../store/useDesktopStore';
+import { useRecycleBinHasItems } from '../../store/useFileSystemStore';
 import type { TaskbarLocation } from '../../db/types';
 import { StartMenu } from './StartMenu';
 import { SystemTray } from './SystemTray';
@@ -27,6 +29,7 @@ export function Taskbar() {
   const isTaskViewOpen = useDesktopStore((state) => state.isTaskViewOpen);
   const taskbarContextMenuPos = useDesktopStore((state) => state.taskbarContextMenuPos);
   const settings = useDesktopStore((state) => state.taskbarSettings);
+  const binHasItems = useRecycleBinHasItems();
   const toggleTaskbarApp = useDesktopStore((state) => state.toggleTaskbarApp);
   const toggleStartMenu = useDesktopStore((state) => state.toggleStartMenu);
   const toggleTaskView = useDesktopStore((state) => state.toggleTaskView);
@@ -452,7 +455,7 @@ export function Taskbar() {
                     ].join(' ')}
                   >
                     <img
-                      src={app.icon}
+                      src={resolveDesktopAppIcon(app, binHasItems)}
                       alt={app.name}
                       draggable={false}
                       className={`${iconSizeClass} object-contain pointer-events-none shrink-0`}

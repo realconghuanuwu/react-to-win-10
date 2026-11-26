@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { type DesktopAppItem } from '../../data/desktopApps';
+import { resolveDesktopAppIcon, type DesktopAppItem } from '../../data/desktopApps';
 import { getTaskbarThickness, useDesktopStore, type TileSize } from '../../store/useDesktopStore';
+import { useRecycleBinHasItems } from '../../store/useFileSystemStore';
 
 const RECENT_APP_IDS = ['calculator', 'explorer', 'store'];
 const ACCESSORIES_IDS = ['notepad', 'paint', 'snip'];
@@ -19,6 +20,7 @@ export function StartMenu() {
   const startMenuSettings = useDesktopStore((state) => state.startMenuSettings);
   const userName = useDesktopStore((state) => state.userName);
   const startMenuTileIds = useDesktopStore((state) => state.startMenuTileIds);
+  const binHasItems = useRecycleBinHasItems();
   const tileSizes = useDesktopStore((state) => state.tileSizes);
   const openApp = useDesktopStore((state) => state.openApp);
   const closeStartMenu = useDesktopStore((state) => state.closeStartMenu);
@@ -106,9 +108,11 @@ export function StartMenu() {
 
   const appById = useMemo(() => {
     const map = new Map<string, DesktopAppItem>();
-    apps.forEach((app) => map.set(app.id, app));
+    apps.forEach((app) =>
+      map.set(app.id, { ...app, icon: resolveDesktopAppIcon(app, binHasItems) }),
+    );
     return map;
-  }, [apps]);
+  }, [apps, binHasItems]);
 
   const recentApps = useMemo(
     () => RECENT_APP_IDS.map((id) => appById.get(id)).filter((a): a is DesktopAppItem => Boolean(a)),

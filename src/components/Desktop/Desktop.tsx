@@ -16,7 +16,8 @@ import {
   type DesktopIconSize,
   type GridSlot,
 } from '../../store/useDesktopStore';
-import { formatStorageBytes, useFileSystemStore } from '../../store/useFileSystemStore';
+import { resolveDesktopAppIcon } from '../../data/desktopApps';
+import { formatStorageBytes, useFileSystemStore, useRecycleBinHasItems } from '../../store/useFileSystemStore';
 import { getWallpaperCssProps } from '../Apps/PersonalizationSettingsApp';
 import { handleFileClipboardShortcut } from '../../utils/fileClipboardShortcuts';
 import { openVirtualFile } from '../../utils/openVirtualFile';
@@ -40,9 +41,9 @@ interface DragPreview {
 }
 
 const CELL_DIMENSIONS: Record<DesktopIconSize, { w: number; h: number }> = {
-  small: { w: 76, h: 68 },
-  medium: { w: 82, h: 80 },
-  large: { w: 94, h: 98 },
+  small: { w: 80, h: 74 },
+  medium: { w: 88, h: 88 },
+  large: { w: 102, h: 106 },
 };
 
 const PADDING = 8;
@@ -77,6 +78,7 @@ export function Desktop() {
   const setShortcutModalOpen = useDesktopStore((state) => state.setShortcutModalOpen);
 
   const fsNodes = useFileSystemStore((state) => state.nodes);
+  const binHasItems = useRecycleBinHasItems();
   const renameFsNode = useFileSystemStore((state) => state.renameNode);
   const clipboard = useFileSystemStore((state) => state.clipboard);
   const deleteFsNodes = useFileSystemStore((state) => state.deleteNodes);
@@ -119,7 +121,7 @@ export function Desktop() {
       .map((app) => ({
         id: app.id,
         name: shortcutLabels[app.id] ?? app.name,
-        icon: app.icon,
+        icon: resolveDesktopAppIcon(app, binHasItems),
         isFolder: false,
         isSystem: true,
       }));
@@ -141,47 +143,47 @@ export function Desktop() {
       }));
 
     return [...builtIn, ...desktopNodes];
-  }, [allApps, shortcutLabels, fsNodes]);
+  }, [allApps, shortcutLabels, fsNodes, binHasItems]);
 
   const resolvedSlots = useMemo(() => {
     const result: Record<string, GridSlot> = {};
     const assignedIds: string[] = [];
 
     if (autoArrangeIcons) {
-      desktopItems.forEach((item, index) => {
-        const existing = iconPositions[item.id];
-        if (existing) {
-          result[item.id] = {
-            col: Math.max(0, existing.col),
-            row: Math.max(0, Math.min(maxRows - 1, existing.row)),
-          };
-        } else {
-          result[item.id] = findNextFreeSlot(
-            { ...iconPositions, ...result },
-            assignedIds,
-            maxRows,
-            { col: Math.floor(index / maxRows), row: index % maxRows },
-          );
-        }
-        assignedIds.push(item.id);
+      const ordered = [...desktopItems].sort((a, b) => {
+        const pa = iconPositions[a.id];
+        const pb = iconPositions[b.id];
+        if (pa && pb) return pa.col - pb.col || pa.row - pb.row;
+        if (pa) return -1;
+        if (pb) return 1;
+        return 0;
+      });
+      ordered.forEach((item, index) => {
+        result[item.id] = {
+          col: Math.floor(index / maxRows),
+          row: index % maxRows,
+        };
       });
       return result;
     }
 
+    const taken = new Set<string>();
     desktopItems.forEach((item) => {
       const existing = iconPositions[item.id];
       if (existing) {
-        result[item.id] = {
-          col: Math.max(0, existing.col),
-          row: Math.max(0, Math.min(maxRows - 1, existing.row)),
-        };
-      } else {
-        result[item.id] = findNextFreeSlot(
-          { ...iconPositions, ...result },
-          assignedIds,
-          maxRows,
-        );
+        const col = Math.max(0, existing.col);
+        const row = Math.max(0, Math.min(maxRows - 1, existing.row));
+        const key = `${col}:${row}`;
+        if (!taken.has(key)) {
+          result[item.id] = { col, row };
+          taken.add(key);
+          assignedIds.push(item.id);
+          return;
+        }
       }
+      const freeSlot = findNextFreeSlot(result, assignedIds, maxRows);
+      result[item.id] = freeSlot;
+      taken.add(`${freeSlot.col}:${freeSlot.row}`);
       assignedIds.push(item.id);
     });
     return result;
@@ -603,7 +605,7 @@ export function Desktop() {
         >
           {desktopItems.map((item) => {
             const slot = resolvedSlots[item.id] ?? { col: 0, row: 0 };
-            const free = !alignToGrid ? freeIconPositions[item.id] : undefined;
+            const free = !alignToGrid && !autoArrangeIcons ? freeIconPositions[item.id] : undefined;
             const left = free ? free.x : PADDING + slot.col * cellStep.w;
             const top = free ? free.y : PADDING + slot.row * cellStep.h;
             return (
