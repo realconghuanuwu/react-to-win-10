@@ -68,6 +68,7 @@ export interface TaskbarSettings {
 }
 
 export type PersonalizationTab =
+  | 'Home'
   | 'Display'
   | 'Background'
   | 'Colors'
@@ -75,7 +76,18 @@ export type PersonalizationTab =
   | 'Themes'
   | 'Fonts'
   | 'Start'
-  | 'Taskbar';
+  | 'Taskbar'
+  | 'Network'
+  | 'Accounts'
+  | 'Apps'
+  | 'Time'
+  | 'Update';
+
+export interface StartMenuSettings {
+  showMoreTiles: boolean;
+  showAppList: boolean;
+  showRecentlyAdded: boolean;
+}
 
 export type BackgroundType = 'picture' | 'solid';
 export type BackgroundFit = 'fill' | 'fit' | 'stretch' | 'tile' | 'center';

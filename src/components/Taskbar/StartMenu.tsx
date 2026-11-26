@@ -16,6 +16,8 @@ export function StartMenu() {
   const isStartMenuOpen = useDesktopStore((state) => state.isStartMenuOpen);
   const apps = useDesktopStore((state) => state.apps);
   const taskbarSettings = useDesktopStore((state) => state.taskbarSettings);
+  const startMenuSettings = useDesktopStore((state) => state.startMenuSettings);
+  const userName = useDesktopStore((state) => state.userName);
   const startMenuTileIds = useDesktopStore((state) => state.startMenuTileIds);
   const tileSizes = useDesktopStore((state) => state.tileSizes);
   const openApp = useDesktopStore((state) => state.openApp);
@@ -173,7 +175,13 @@ export function StartMenu() {
       onContextMenu={(e) => e.preventDefault()}
       onClick={() => setItemMenu(null)}
       style={startMenuPositionStyle}
-      className="fixed z-40 flex w-[630px] max-w-[calc(100vw-8px)] h-[590px] max-h-[calc(100vh-48px)] bg-[#1f1f1f]/95 backdrop-blur-2xl border border-white/10 shadow-[4px_-4px_24px_rgba(0,0,0,0.6)] text-white select-none"
+      className={`fixed z-40 flex max-w-[calc(100vw-8px)] h-[590px] max-h-[calc(100vh-48px)] bg-[#1f1f1f]/95 backdrop-blur-2xl border border-white/10 shadow-[4px_-4px_24px_rgba(0,0,0,0.6)] text-white select-none ${
+        !startMenuSettings.showAppList
+          ? 'w-[410px]'
+          : startMenuSettings.showMoreTiles
+            ? 'w-[700px]'
+            : 'w-[630px]'
+      }`}
     >
       {/* Left Navigation Rail */}
       <div
@@ -210,10 +218,10 @@ export function StartMenu() {
           >
             <span className="w-[48px] flex items-center justify-center shrink-0">
               <span className="w-6 h-6 rounded-full bg-[#3a3a3a] border border-white/25 flex items-center justify-center text-[11px] font-medium">
-                U
+                {userName.charAt(0).toUpperCase()}
               </span>
             </span>
-            {railExpanded && <span className="text-[12.5px] truncate">User</span>}
+            {railExpanded && <span className="text-[12.5px] truncate">{userName}</span>}
           </button>
 
           {userMenuOpen && (
@@ -343,10 +351,13 @@ export function StartMenu() {
       </div>
 
       {/* Middle Column: Alphabetical App List */}
+      {startMenuSettings.showAppList && (
       <div
         aria-label="All apps"
         className="win10-scroll w-[238px] shrink-0 h-full overflow-y-auto px-2 py-2.5 border-r border-white/5"
       >
+        {startMenuSettings.showRecentlyAdded && (
+        <>
         <div className="px-2 pb-1 text-[12px] text-white/80 font-normal">Recently added</div>
         <div className="space-y-0.5 mb-3">
           {recentApps.map((app) => (
@@ -367,6 +378,8 @@ export function StartMenu() {
             </button>
           ))}
         </div>
+        </>
+        )}
 
         <div className="space-y-2">
           {alphaGroups.map(([letter, list]) => (
@@ -441,11 +454,12 @@ export function StartMenu() {
           </div>
         </div>
       </div>
+      )}
 
       {/* Right Column: Live Tiles */}
       <div aria-label="Pinned tiles" className="win10-scroll flex-1 h-full overflow-y-auto p-3.5 space-y-4">
         <div className="text-[12.5px] font-normal text-white/90">Pinned Apps</div>
-        <div className="grid grid-cols-3 gap-1.5 auto-rows-[96px]">
+        <div className={`grid gap-1.5 auto-rows-[96px] ${startMenuSettings.showMoreTiles ? 'grid-cols-4' : 'grid-cols-3'}`}>
           {pinnedTileApps.map((app) => {
             const size = tileSizes[app.id] ?? 'medium';
             const spanClass = size === 'wide' ? 'col-span-2' : '';

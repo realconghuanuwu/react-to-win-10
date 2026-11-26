@@ -258,37 +258,86 @@ function AltTabOverlay() {
 function LockScreenOverlay() {
   const isOpen = useDesktopStore((s) => s.isLockScreenOpen);
   const personalization = useDesktopStore((s) => s.personalizationSettings);
+  const userName = useDesktopStore((s) => s.userName);
+  const lockPin = useDesktopStore((s) => s.lockPin);
+  const wifiEnabled = useDesktopStore((s) => s.wifiEnabled);
+  const airplaneMode = useDesktopStore((s) => s.airplaneMode);
+  const networkName = useDesktopStore((s) => s.networkName);
+  const nightLightEnabled = useDesktopStore((s) => s.nightLightEnabled);
+  const toggleQuickSetting = useDesktopStore((s) => s.toggleQuickSetting);
   const setLockScreenOpen = useDesktopStore((s) => s.setLockScreenOpen);
+  const setPowerState = useDesktopStore((s) => s.setPowerState);
+
   const [now, setNow] = useState(() => new Date());
+  const [stage, setStage] = useState<'curtain' | 'signin'>('curtain');
+  const [pinDraft, setPinDraft] = useState('');
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [powerOpen, setPowerOpen] = useState(false);
+  const pinInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setStage('curtain');
+      setPinDraft('');
+      setPinError(null);
+      setPowerOpen(false);
+      return;
+    }
     const t = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(t);
   }, [isOpen]);
 
   useEffect(() => {
+    if (isOpen && stage === 'signin' && lockPin) {
+      window.setTimeout(() => pinInputRef.current?.focus(), 40);
+    }
+  }, [isOpen, stage, lockPin]);
+
+  useEffect(() => {
     if (!isOpen) return;
-    const unlockOnKey = (e: KeyboardEvent) => {
-      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') {
+    const handleKey = (e: KeyboardEvent) => {
+      if (stage === 'curtain' && (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape')) {
+        e.preventDefault();
+        setStage('signin');
+      } else if (stage === 'signin' && e.key === 'Escape') {
+        e.preventDefault();
+        setStage('curtain');
+        setPinError(null);
+      } else if (stage === 'signin' && !lockPin && (e.key === 'Enter' || e.key === ' ')) {
         e.preventDefault();
         setLockScreenOpen(false);
       }
     };
-    window.addEventListener('keydown', unlockOnKey);
-    return () => window.removeEventListener('keydown', unlockOnKey);
-  }, [isOpen, setLockScreenOpen]);
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [isOpen, stage, lockPin, setLockScreenOpen]);
 
   if (!isOpen) return null;
 
   const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
   const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
+  const handleAttemptSignIn = (e?: FormEvent) => {
+    e?.preventDefault();
+    if (lockPin && pinDraft !== lockPin) {
+      setPinError('The PIN is incorrect. Try again.');
+      setPinDraft('');
+      pinInputRef.current?.focus();
+      return;
+    }
+    setPinError(null);
+    setPinDraft('');
+    setLockScreenOpen(false);
+  };
+
   return (
     <div
       role="dialog"
       aria-label="Lock Screen"
-      onClick={() => setLockScreenOpen(false)}
+      onClick={() => {
+        if (stage === 'curtain') setStage('signin');
+        else setPowerOpen(false);
+      }}
       style={{
         backgroundImage:
           personalization.backgroundType === 'picture'
@@ -298,27 +347,175 @@ function LockScreenOverlay() {
       }}
       className="fixed inset-0 z-[180] bg-cover bg-center flex flex-col justify-between p-12 text-white select-none cursor-default"
     >
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" />
-      <div />
-      <div className="relative z-10 flex flex-col items-start">
-        <div className="text-[84px] font-light leading-none tracking-tight drop-shadow-lg tabular-nums">
-          {timeStr}
-        </div>
-        <div className="mt-2 text-[28px] font-light drop-shadow-md">{dateStr}</div>
-      </div>
-      <div className="relative z-10 flex items-center justify-between text-white/85 text-[13px]">
-        <span>Click anywhere or press Space / Enter to sign in</span>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            setLockScreenOpen(false);
-          }}
-          className="px-4 py-1.5 bg-white/20 hover:bg-white/30 border border-white/30 text-white cursor-default"
-        >
-          Sign in
-        </button>
-      </div>
+      <div
+        className={`absolute inset-0 transition-all duration-300 ${
+          stage === 'signin' ? 'bg-black/50 backdrop-blur-2xl' : 'bg-black/30 backdrop-blur-[2px]'
+        }`}
+      />
+
+      {stage === 'curtain' ? (
+        <>
+          <div />
+          <div className="relative z-10 flex flex-col items-start">
+            <div className="text-[84px] font-light leading-none tracking-tight drop-shadow-lg tabular-nums">
+              {timeStr}
+            </div>
+            <div className="mt-2 text-[28px] font-light drop-shadow-md">{dateStr}</div>
+          </div>
+          <div className="relative z-10 flex items-center justify-between text-white/90 text-[13px]">
+            <span>Click anywhere or press Space / Enter to sign in</span>
+            <div className="flex items-center gap-4">
+              <span title={wifiEnabled && !airplaneMode ? `Connected to ${networkName}` : 'No network'}>
+                {airplaneMode ? '✈' : wifiEnabled ? '📶' : '⚠'}
+              </span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setStage('signin');
+                }}
+                className="px-4 py-1.5 bg-white/20 hover:bg-white/30 border border-white/30 text-white cursor-default"
+              >
+                Sign in
+              </button>
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="relative z-10">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setStage('curtain');
+              }}
+              className="px-3 py-1 bg-white/10 hover:bg-white/20 text-[12px] text-white/90 cursor-default"
+            >
+              ← Lock screen
+            </button>
+          </div>
+
+          <form
+            onSubmit={handleAttemptSignIn}
+            onClick={(e) => e.stopPropagation()}
+            className="relative z-10 flex flex-col items-center justify-center gap-3 max-w-[320px] w-full mx-auto"
+          >
+            <div className="w-[144px] h-[144px] rounded-full bg-white/15 border border-white/30 flex items-center justify-center text-[56px] font-light shadow-2xl">
+              {userName.charAt(0).toUpperCase()}
+            </div>
+            <div className="text-[28px] font-light tracking-tight">{userName}</div>
+
+            {lockPin ? (
+              <div className="w-full space-y-2 mt-1">
+                <div className="flex items-center bg-black/50 border border-white/40 focus-within:border-[#0078d7]">
+                  <input
+                    ref={pinInputRef}
+                    type="password"
+                    value={pinDraft}
+                    onChange={(e) => {
+                      setPinDraft(e.target.value);
+                      if (pinError) setPinError(null);
+                    }}
+                    placeholder="PIN"
+                    aria-label="Enter PIN"
+                    className="flex-1 h-[36px] px-3 bg-transparent text-[13.5px] text-white placeholder:text-white/60 outline-none"
+                  />
+                  <button
+                    type="submit"
+                    aria-label="Submit PIN"
+                    className="w-[36px] h-[36px] bg-white/15 hover:bg-white/25 flex items-center justify-center text-[15px] cursor-default"
+                  >
+                    →
+                  </button>
+                </div>
+                {pinError && (
+                  <p role="alert" className="text-center text-[12px] text-[#ffb4b4]">
+                    {pinError}
+                  </p>
+                )}
+                <div className="text-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPinError(null);
+                      setLockScreenOpen(false);
+                    }}
+                    className="text-[12px] text-white/75 hover:text-white hover:underline cursor-default"
+                  >
+                    Unlock without PIN
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="submit"
+                className="mt-2 px-9 py-2 bg-white/20 hover:bg-white/30 border border-white/40 text-[14px] text-white cursor-default"
+              >
+                Sign in
+              </button>
+            )}
+          </form>
+
+          {/* Bottom-right Network, Night Light & Power Bar */}
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative z-10 flex items-center justify-end gap-3 text-[13px]"
+          >
+            <span
+              title={airplaneMode ? 'Airplane mode' : wifiEnabled ? `Connected (${networkName})` : 'Disconnected'}
+              className="px-2.5 py-1.5 bg-white/10 border border-white/15 text-white/90"
+            >
+              {airplaneMode ? '✈ Airplane mode' : wifiEnabled ? `📶 ${networkName}` : 'Wi-Fi Off'}
+            </span>
+            <button
+              type="button"
+              title="Toggle Night light"
+              onClick={() => toggleQuickSetting('nightLightEnabled')}
+              className={`px-2.5 py-1.5 border cursor-default ${
+                nightLightEnabled ? 'bg-[#0078d7] border-white/40' : 'bg-white/10 hover:bg-white/20 border-white/15'
+              }`}
+            >
+              🌙 Night light
+            </button>
+            <div className="relative">
+              <button
+                type="button"
+                aria-label="Power options"
+                onClick={() => setPowerOpen((v) => !v)}
+                className="px-3 py-1.5 bg-white/10 hover:bg-white/20 border border-white/15 cursor-default"
+              >
+                ⏻ Power
+              </button>
+              {powerOpen && (
+                <div className="absolute right-0 bottom-full mb-2 w-[140px] bg-[#242424] border border-white/25 shadow-2xl py-1 text-[12px]">
+                  <button
+                    type="button"
+                    onClick={() => { setPowerOpen(false); setPowerState('sleeping'); }}
+                    className="w-full text-left px-3 py-1.5 hover:bg-[#414141] cursor-default"
+                  >
+                    Sleep
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setPowerOpen(false); setPowerState('shutting-down'); }}
+                    className="w-full text-left px-3 py-1.5 hover:bg-[#414141] cursor-default"
+                  >
+                    Shut down
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setPowerOpen(false); setPowerState('restarting'); }}
+                    className="w-full text-left px-3 py-1.5 hover:bg-[#414141] cursor-default"
+                  >
+                    Restart
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -580,6 +777,7 @@ function ToastContainer() {
 
 export function SystemOverlays() {
   const nightLightEnabled = useDesktopStore((s) => s.nightLightEnabled);
+  const brightness = useDesktopStore((s) => s.brightness);
   const isAltTabOpen = useDesktopStore((s) => s.isAltTabOpen);
 
   // Global Windows 10 keyboard shortcuts
@@ -774,6 +972,13 @@ export function SystemOverlays() {
         <div
           aria-hidden="true"
           className="fixed inset-0 z-[190] pointer-events-none bg-[#ff9b3d]/20 mix-blend-multiply transition-opacity duration-300"
+        />
+      )}
+      {brightness < 100 && (
+        <div
+          aria-hidden="true"
+          style={{ opacity: ((100 - brightness) / 100) * 0.65 }}
+          className="fixed inset-0 z-[191] pointer-events-none bg-black transition-opacity duration-150"
         />
       )}
     </>

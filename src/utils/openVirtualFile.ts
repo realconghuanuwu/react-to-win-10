@@ -35,7 +35,7 @@ export function openVirtualFile(id: string) {
   if (category === 'word' || (category === 'excel' && extension !== 'csv')) {
     desktop.openOfficeFile(category, id);
   } else if (category === 'image') {
-    desktop.openPaintFile(id);
+    desktop.openPhotoFile(id);
   } else if (file.blobId || ['mp4', 'webm', 'mp3', 'm4a'].includes(extension)) {
     desktop.openMediaFile(id);
   } else {

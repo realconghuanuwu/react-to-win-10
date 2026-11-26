@@ -5,6 +5,7 @@ import type {
   PersistedDesktopLayout,
   PersonalizationSettings,
   PersonalizationTab,
+  StartMenuSettings,
   TaskbarSettings,
 } from '../db/types';
 import {
@@ -16,7 +17,7 @@ import {
   saveTaskbarSettings,
 } from '../db/win10Db';
 
-export type { GridSlot, PersonalizationSettings, PersonalizationTab, TaskbarSettings };
+export type { GridSlot, PersonalizationSettings, PersonalizationTab, StartMenuSettings, TaskbarSettings };
 
 export interface TaskbarContextMenuPosition {
   x: number;
@@ -216,6 +217,13 @@ interface DesktopState {
   mediaPlayerOpenNonce: number;
   paintActiveFileId: string | null;
   paintOpenNonce: number;
+  photosActiveFileId: string | null;
+  photosOpenNonce: number;
+  brightness: number;
+  displayScale: 100 | 125 | 150;
+  lockPin: string | null;
+  userName: string;
+  startMenuSettings: StartMenuSettings;
   iconSize: DesktopIconSize;
   showDesktopIcons: boolean;
   autoArrangeIcons: boolean;
@@ -259,6 +267,11 @@ interface DesktopState {
   setSystemVolume: (volume: number) => void;
   toggleSystemMute: () => void;
   setAppVolume: (appId: string, volume: number) => void;
+  setBrightness: (brightness: number) => void;
+  setDisplayScale: (scale: 100 | 125 | 150) => void;
+  setLockPin: (pin: string | null) => void;
+  setUserName: (name: string) => void;
+  updateStartMenuSettings: (updater: Partial<StartMenuSettings>) => void;
   settingsActiveTab: PersonalizationTab;
   hydrate: () => Promise<void>;
   selectIcon: (id: string, multiSelect: boolean) => void;
@@ -319,6 +332,7 @@ interface DesktopState {
   openOfficeFile: (appId: 'word' | 'excel', fileId: string | null) => void;
   openMediaFile: (fileId: string | null) => void;
   openPaintFile: (fileId: string | null) => void;
+  openPhotoFile: (fileId: string | null) => void;
   toggleTaskbarApp: (id: string) => void;
   focusWindow: (id: string) => void;
   minimizeWindow: (id: string) => void;
@@ -394,10 +408,11 @@ function createInitialWindowLayout(
   const isStudio = appId === 'code-studio';
   const isPdfTool = appId === 'pdf-tool';
   const isPaint = appId === 'paint';
-  const targetWidth = isCalc ? 340 : isOffice || isStudio || isPdfTool ? 1120 : isPaint ? 1080 : isChrome ? 1040 : isExplorer ? 940 : isSettings ? 840 : DEFAULT_WIDTH;
-  const targetHeight = isCalc ? 540 : isOffice || isStudio || isPdfTool ? 700 : isPaint ? 680 : isChrome ? 680 : isExplorer ? 600 : isSettings ? 580 : DEFAULT_HEIGHT;
-  const minWidth = isCalc ? 320 : isOffice || isPaint ? 680 : isChrome ? 520 : isExplorer ? 620 : isSettings ? 580 : 320;
-  const minHeight = isCalc ? 480 : isOffice ? 460 : isPaint ? 420 : isStudio || isChrome ? 380 : isPdfTool ? 360 : isExplorer ? 400 : isSettings ? 420 : 220;
+  const isPhotos = appId === 'photos';
+  const targetWidth = isCalc ? 340 : isOffice || isStudio || isPdfTool ? 1120 : isPaint ? 1080 : isChrome ? 1040 : isPhotos ? 960 : isExplorer ? 940 : isSettings ? 880 : DEFAULT_WIDTH;
+  const targetHeight = isCalc ? 540 : isOffice || isStudio || isPdfTool ? 700 : isPaint ? 680 : isChrome ? 680 : isPhotos ? 640 : isExplorer ? 600 : isSettings ? 600 : DEFAULT_HEIGHT;
+  const minWidth = isCalc ? 320 : isOffice || isPaint ? 680 : isChrome ? 520 : isPhotos || isExplorer ? 620 : isSettings ? 580 : 320;
+  const minHeight = isCalc ? 480 : isOffice ? 460 : isPaint ? 420 : isStudio || isChrome ? 380 : isPdfTool ? 360 : isPhotos || isExplorer ? 400 : isSettings ? 420 : 220;
 
   const width = Math.min(targetWidth, Math.max(minWidth, vw - 48));
   const height = Math.min(targetHeight, Math.max(minHeight, vh - 48));
@@ -455,6 +470,38 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
   mediaPlayerOpenNonce: 0,
   paintActiveFileId: null,
   paintOpenNonce: 0,
+  photosActiveFileId: null,
+  photosOpenNonce: 0,
+  brightness: (() => {
+    try {
+      const raw = typeof window !== 'undefined' ? window.localStorage.getItem('win10_brightness_v1') : null;
+      if (!raw) return 100;
+      const n = Number(raw);
+      return Number.isFinite(n) ? Math.max(20, Math.min(100, Math.round(n))) : 100;
+    } catch {
+      return 100;
+    }
+  })(),
+  displayScale: 100,
+  lockPin: (() => {
+    try {
+      return typeof window !== 'undefined' ? window.localStorage.getItem('win10_lock_pin_v1') : null;
+    } catch {
+      return null;
+    }
+  })(),
+  userName: (() => {
+    try {
+      return (typeof window !== 'undefined' ? window.localStorage.getItem('win10_user_name_v1') : null) || 'User';
+    } catch {
+      return 'User';
+    }
+  })(),
+  startMenuSettings: {
+    showMoreTiles: false,
+    showAppList: true,
+    showRecentlyAdded: true,
+  },
   iconSize: 'medium',
   showDesktopIcons: true,
   autoArrangeIcons: true,
@@ -555,8 +602,46 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
       },
     })),
 
+  setBrightness: (brightness) => {
+    const clamped = Math.max(20, Math.min(100, Math.round(brightness)));
+    try {
+      window.localStorage.setItem('win10_brightness_v1', String(clamped));
+    } catch {
+      // ignore
+    }
+    set({ brightness: clamped });
+  },
+
+  setDisplayScale: (displayScale) => set({ displayScale }),
+
+  setLockPin: (pin) => {
+    const cleaned = pin ? pin.trim() : null;
+    try {
+      if (cleaned) window.localStorage.setItem('win10_lock_pin_v1', cleaned);
+      else window.localStorage.removeItem('win10_lock_pin_v1');
+    } catch {
+      // ignore
+    }
+    set({ lockPin: cleaned });
+  },
+
+  setUserName: (name) => {
+    const trimmed = name.trim() || 'User';
+    try {
+      window.localStorage.setItem('win10_user_name_v1', trimmed);
+    } catch {
+      // ignore
+    }
+    set({ userName: trimmed });
+  },
+
+  updateStartMenuSettings: (updater) =>
+    set((state) => ({
+      startMenuSettings: { ...state.startMenuSettings, ...updater },
+    })),
+
   personalizationSettings: DEFAULT_PERSONALIZATION_SETTINGS,
-  settingsActiveTab: 'Background',
+  settingsActiveTab: 'Home',
 
   hydrate: () => {
     if (desktopHydratePromise) return desktopHydratePromise;
@@ -1333,6 +1418,58 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
         isStartMenuOpen: false,
         paintActiveFileId: fileId,
         paintOpenNonce: state.paintOpenNonce + 1,
+      };
+    }),
+
+  openPhotoFile: (fileId) =>
+    set((state) => {
+      const app = state.apps.find((item) => item.id === 'photos');
+      if (!app) return state;
+
+      const nextZ = state.topZIndex + 1;
+      const existing = state.windows.find(
+        (w) => (w.appId ?? w.id) === 'photos' && w.desktopId === state.activeDesktopId,
+      );
+
+      if (existing) {
+        return {
+          windows: state.windows.map((w) =>
+            w.id === existing.id ? { ...w, isMinimized: false, zIndex: nextZ } : w,
+          ),
+          activeAppId: existing.id,
+          topZIndex: nextZ,
+          contextMenuPos: null,
+          isStartMenuOpen: false,
+          photosActiveFileId: fileId,
+          photosOpenNonce: state.photosOpenNonce + 1,
+        };
+      }
+
+      const layout = createInitialWindowLayout(
+        'photos',
+        state.windows.length,
+        state.taskbarSettings,
+      );
+      const winId = allocateWindowId('photos', state.windows);
+      const newWindow: AppWindow = {
+        id: winId,
+        appId: 'photos',
+        desktopId: state.activeDesktopId,
+        title: 'Photos',
+        icon: app.icon,
+        ...layout,
+        zIndex: nextZ,
+        isMinimized: false,
+      };
+
+      return {
+        windows: [...state.windows, newWindow],
+        activeAppId: winId,
+        topZIndex: nextZ,
+        contextMenuPos: null,
+        isStartMenuOpen: false,
+        photosActiveFileId: fileId,
+        photosOpenNonce: state.photosOpenNonce + 1,
       };
     }),
 

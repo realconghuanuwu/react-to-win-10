@@ -4,6 +4,7 @@ import {
   useDesktopStore,
   type PersonalizationTab,
 } from '../../store/useDesktopStore';
+import { formatStorageBytes, useFileSystemStore } from '../../store/useFileSystemStore';
 import type { BackgroundFit, BackgroundType } from '../../db/types';
 import { TaskbarSettingsPanel } from './TaskbarSettingsApp';
 
@@ -23,37 +24,62 @@ const WIN10_COLORS = [
 ];
 
 const PRESET_THEMES = [
+  { name: 'Windows (light)', wallpaper: '/assets/wallpapers/win10-hero.jpg', accentColor: '#0078d7' },
+  { name: 'Windows 10 Beach', wallpaper: '/assets/wallpapers/img2.jpg', accentColor: '#0099bc' },
+  { name: 'Ocean Deep', wallpaper: '/assets/wallpapers/img3.jpg', accentColor: '#038387' },
+  { name: 'Starry Night', wallpaper: '/assets/wallpapers/img4.jpg', accentColor: '#ff8c00' },
+];
+
+const NAV_GROUPS: Array<{ title: string; items: Array<{ id: PersonalizationTab; label: string }> }> = [
   {
-    name: 'Windows (light)',
-    wallpaper: '/assets/wallpapers/win10-hero.jpg',
-    accentColor: '#0078d7',
+    title: 'Personalization',
+    items: [
+      { id: 'Background', label: 'Background' },
+      { id: 'Colors', label: 'Colors' },
+      { id: 'Lock screen', label: 'Lock screen' },
+      { id: 'Themes', label: 'Themes' },
+      { id: 'Fonts', label: 'Fonts' },
+      { id: 'Start', label: 'Start' },
+      { id: 'Taskbar', label: 'Taskbar' },
+    ],
   },
   {
-    name: 'Windows 10 Beach',
-    wallpaper: '/assets/wallpapers/img2.jpg',
-    accentColor: '#0099bc',
-  },
-  {
-    name: 'Ocean Deep',
-    wallpaper: '/assets/wallpapers/img3.jpg',
-    accentColor: '#038387',
-  },
-  {
-    name: 'Starry Night',
-    wallpaper: '/assets/wallpapers/img4.jpg',
-    accentColor: '#ff8c00',
+    title: 'System & Device',
+    items: [
+      { id: 'Display', label: 'Display' },
+      { id: 'Network', label: 'Network & Internet' },
+      { id: 'Apps', label: 'Apps' },
+      { id: 'Accounts', label: 'Accounts' },
+      { id: 'Time', label: 'Time & language' },
+      { id: 'Update', label: 'Update & Security' },
+    ],
   },
 ];
 
-const NAV_ITEMS: Array<{ id: PersonalizationTab; label: string }> = [
-  { id: 'Display', label: 'Display' },
-  { id: 'Background', label: 'Background' },
-  { id: 'Colors', label: 'Colors' },
-  { id: 'Lock screen', label: 'Lock screen' },
-  { id: 'Themes', label: 'Themes' },
-  { id: 'Fonts', label: 'Fonts' },
-  { id: 'Start', label: 'Start' },
-  { id: 'Taskbar', label: 'Taskbar' },
+const HOME_CATEGORIES: Array<{
+  tab: PersonalizationTab;
+  title: string;
+  desc: string;
+  glyph: string;
+}> = [
+  { tab: 'Display', title: 'System', desc: 'Display, brightness, night light, storage', glyph: '🖥' },
+  { tab: 'Network', title: 'Network & Internet', desc: 'Wi-Fi, airplane mode, VPN', glyph: '🌐' },
+  { tab: 'Background', title: 'Personalization', desc: 'Background, lock screen, colors, Start', glyph: '🎨' },
+  { tab: 'Apps', title: 'Apps', desc: 'Installed apps, defaults, features', glyph: '⊞' },
+  { tab: 'Accounts', title: 'Accounts', desc: 'Your info, sign-in PIN, lock screen', glyph: '👤' },
+  { tab: 'Time', title: 'Time & Language', desc: 'Date, time, region, format', glyph: '🕒' },
+  { tab: 'Taskbar', title: 'Taskbar & Shell', desc: 'Location, icons, combine, badges', glyph: '▭' },
+  { tab: 'Update', title: 'Update & Security', desc: 'Windows Update, recovery, security', glyph: '⟳' },
+];
+
+const SYSTEM_FONTS = [
+  { name: 'Segoe UI', family: '"Segoe UI", sans-serif', desc: 'System UI default font' },
+  { name: 'Calibri', family: 'Calibri, "Segoe UI", sans-serif', desc: 'Default Microsoft Word & Excel font' },
+  { name: 'Consolas', family: 'Consolas, monospace', desc: 'Notepad & Code Studio monospace' },
+  { name: 'Arial', family: 'Arial, sans-serif', desc: 'Classic sans-serif' },
+  { name: 'Times New Roman', family: '"Times New Roman", serif', desc: 'Traditional editorial serif' },
+  { name: 'Georgia', family: 'Georgia, serif', desc: 'Screen-readable serif' },
+  { name: 'Courier New', family: '"Courier New", monospace', desc: 'Fixed-width typewriter' },
 ];
 
 export function getWallpaperCssProps(
@@ -97,21 +123,15 @@ function DesktopPreviewMockup({
       style={bgStyle}
       className="relative w-[336px] max-w-full h-[186px] border border-white/15 overflow-hidden shadow-md"
     >
-      {/* Mini Start Menu + Window Preview */}
       <div className="absolute bottom-0 left-0 w-[168px] h-[112px] bg-[#181818]/92 border-t border-r border-white/15 flex p-2 gap-2">
-        {/* Mini App List */}
         <div className="w-[54px] space-y-1.5 pt-1">
           {Array.from({ length: 7 }).map((_, idx) => (
             <div key={idx} className="flex items-center gap-1">
-              <span
-                style={{ backgroundColor: accentColor }}
-                className="w-2.5 h-2.5 shrink-0 inline-block"
-              />
+              <span style={{ backgroundColor: accentColor }} className="w-2.5 h-2.5 shrink-0 inline-block" />
               <span className="h-[2px] flex-1 bg-white/70" />
             </div>
           ))}
         </div>
-        {/* Mini Tiles */}
         <div className="flex-1 grid grid-cols-3 gap-1 pt-1">
           <div
             style={{ backgroundColor: accentColor }}
@@ -126,23 +146,87 @@ function DesktopPreviewMockup({
           <div style={{ backgroundColor: accentColor }} />
         </div>
       </div>
-
-      {/* Mini Taskbar */}
       <div className="absolute bottom-0 inset-x-0 h-[10px] bg-black/80" />
     </div>
   );
 }
 
+function SettingsSwitch({
+  label,
+  checked,
+  accentColor,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  accentColor: string;
+  onChange: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-1.5">
+      <span className="text-[13.5px] text-white/90">{label}</span>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        onClick={onChange}
+        className="flex items-center gap-2 cursor-default"
+      >
+        <span
+          style={{
+            backgroundColor: checked ? accentColor : 'transparent',
+            borderColor: checked ? accentColor : '#999999',
+          }}
+          className={`w-[42px] h-[20px] rounded-full border-2 flex items-center px-[2px] transition-colors ${
+            checked ? 'justify-end' : 'justify-start'
+          }`}
+        >
+          <span className={`w-3 h-3 rounded-full ${checked ? 'bg-white' : 'bg-white/85'}`} />
+        </span>
+        <span className="w-6 text-left text-[12px] text-white/75">{checked ? 'On' : 'Off'}</span>
+      </button>
+    </div>
+  );
+}
+
 export function PersonalizationSettingsApp() {
+  const apps = useDesktopStore((state) => state.apps);
+  const openApp = useDesktopStore((state) => state.openApp);
   const personalization = useDesktopStore((state) => state.personalizationSettings);
   const activeTab = useDesktopStore((state) => state.settingsActiveTab);
   const nightLightEnabled = useDesktopStore((state) => state.nightLightEnabled);
+  const wifiEnabled = useDesktopStore((state) => state.wifiEnabled);
+  const airplaneMode = useDesktopStore((state) => state.airplaneMode);
+  const networkName = useDesktopStore((state) => state.networkName);
+  const brightness = useDesktopStore((state) => state.brightness);
+  const displayScale = useDesktopStore((state) => state.displayScale);
+  const startMenuSettings = useDesktopStore((state) => state.startMenuSettings);
+  const userName = useDesktopStore((state) => state.userName);
+  const lockPin = useDesktopStore((state) => state.lockPin);
+
   const toggleQuickSetting = useDesktopStore((state) => state.toggleQuickSetting);
+  const setNetworkName = useDesktopStore((state) => state.setNetworkName);
+  const setBrightness = useDesktopStore((state) => state.setBrightness);
+  const setDisplayScale = useDesktopStore((state) => state.setDisplayScale);
+  const updateStartMenuSettings = useDesktopStore((state) => state.updateStartMenuSettings);
+  const setUserName = useDesktopStore((state) => state.setUserName);
+  const setLockPin = useDesktopStore((state) => state.setLockPin);
+  const setLockScreenOpen = useDesktopStore((state) => state.setLockScreenOpen);
   const setActiveTab = useDesktopStore((state) => state.setSettingsActiveTab);
   const updatePersonalization = useDesktopStore((state) => state.updatePersonalizationSettings);
   const closeWindow = useDesktopStore((state) => state.closeWindow);
 
+  const storageUsedBytes = useFileSystemStore((state) => state.storageUsedBytes);
+  const storageQuotaBytes = useFileSystemStore((state) => state.storageQuotaBytes);
+
   const [searchQuery, setSearchQuery] = useState('');
+  const [fontSample, setFontSample] = useState('The quick brown fox jumps over the lazy dog');
+  const [fontPreviewSize, setFontPreviewSize] = useState(18);
+  const [pinInput, setPinInput] = useState(lockPin ?? '');
+  const [nameInput, setNameInput] = useState(userName);
+  const [accountSavedMsg, setAccountSavedMsg] = useState('');
+  const [appFilter, setAppFilter] = useState('');
+  const [updateStatus, setUpdateStatus] = useState<"You're up to date" | 'Checking for updates...' | 'All definitions current'>("You're up to date");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const previewStyle = getWallpaperCssProps(
@@ -177,9 +261,11 @@ export function PersonalizationSettingsApp() {
     e.target.value = '';
   };
 
-  const filteredNav = NAV_ITEMS.filter((item) =>
-    item.label.toLowerCase().includes(searchQuery.trim().toLowerCase()),
-  );
+  const qLower = searchQuery.trim().toLowerCase();
+  const filteredGroups = NAV_GROUPS.map((g) => ({
+    ...g,
+    items: g.items.filter((item) => item.label.toLowerCase().includes(qLower)),
+  })).filter((g) => g.items.length > 0);
 
   const selectClass =
     'w-[270px] max-w-full h-[32px] px-2.5 bg-[#0f0f0f] border border-[#666666] hover:border-[#999999] text-[13px] text-white outline-none cursor-default';
@@ -188,13 +274,15 @@ export function PersonalizationSettingsApp() {
     <div className="flex flex-1 min-h-0 bg-[#000000] text-white select-none">
       {/* Left Navigation Sidebar */}
       <aside
-        aria-label="Personalization navigation"
-        className="w-[232px] shrink-0 bg-[#1f1f1f] border-r border-white/10 flex flex-col py-2"
+        aria-label="Settings navigation"
+        className="w-[232px] shrink-0 bg-[#1f1f1f] border-r border-white/10 flex flex-col py-2 overflow-y-auto win10-dark-scroll"
       >
         <button
           type="button"
-          onClick={() => setActiveTab('Background')}
-          className="flex items-center gap-3 h-[40px] px-4 text-[13.5px] text-white/90 hover:bg-white/10 cursor-default"
+          onClick={() => setActiveTab('Home')}
+          className={`flex items-center gap-3 h-[40px] px-4 text-[13.5px] cursor-default shrink-0 ${
+            activeTab === 'Home' ? 'bg-white/10 text-white font-medium' : 'text-white/90 hover:bg-white/10'
+          }`}
         >
           <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true">
             <polyline points="2,7.5 8,2 14,7.5" />
@@ -203,7 +291,7 @@ export function PersonalizationSettingsApp() {
           <span>Home</span>
         </button>
 
-        <div className="px-3 py-2">
+        <div className="px-3 py-2 shrink-0">
           <div className="relative flex items-center">
             <input
               type="text"
@@ -213,64 +301,87 @@ export function PersonalizationSettingsApp() {
               style={{ borderColor: searchQuery ? personalization.accentColor : '#555555' }}
               className="w-full h-[32px] pl-3 pr-8 bg-[#121212] border text-[13px] text-white placeholder:text-white/55 outline-none"
             />
-            <svg
-              viewBox="0 0 16 16"
-              width="14"
-              height="14"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.3"
-              aria-hidden="true"
-              className="absolute right-2.5 text-white/65 pointer-events-none"
-            >
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true" className="absolute right-2.5 text-white/65 pointer-events-none">
               <circle cx="9.5" cy="6.5" r="4" />
               <line x1="6.5" y1="9.5" x2="2.5" y2="13.5" />
             </svg>
           </div>
         </div>
 
-        <div className="px-4 pt-3 pb-2 text-[13px] font-semibold text-white">
-          Personalization
-        </div>
-
-        <nav className="flex flex-col">
-          {filteredNav.map((item) => {
-            const isActive = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setActiveTab(item.id)}
-                className={[
-                  'relative flex items-center h-[40px] px-4 text-[13.5px] text-left transition-colors cursor-default',
-                  isActive
-                    ? 'bg-white/10 text-white font-medium'
-                    : 'text-white/80 hover:bg-white/6',
-                ].join(' ')}
-              >
-                {isActive && (
-                  <span
-                    style={{ backgroundColor: personalization.accentColor }}
-                    className="absolute left-0 top-2 bottom-2 w-[3px]"
-                  />
-                )}
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
-        </nav>
+        {filteredGroups.map((group) => (
+          <div key={group.title} className="mb-2">
+            <div className="px-4 pt-2 pb-1 text-[12px] font-semibold text-white/90">
+              {group.title}
+            </div>
+            <nav className="flex flex-col">
+              {group.items.map((item) => {
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setActiveTab(item.id)}
+                    className={[
+                      'relative flex items-center h-[36px] px-4 text-[13px] text-left transition-colors cursor-default',
+                      isActive ? 'bg-white/10 text-white font-medium' : 'text-white/80 hover:bg-white/6',
+                    ].join(' ')}
+                  >
+                    {isActive && (
+                      <span
+                        style={{ backgroundColor: personalization.accentColor }}
+                        className="absolute left-0 top-2 bottom-2 w-[3px]"
+                      />
+                    )}
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
+        ))}
       </aside>
 
       {/* Main Content */}
       <section className="win10-dark-scroll flex-1 overflow-y-auto px-8 py-6 bg-[#000000]">
+        {activeTab === 'Home' && (
+          <div className="space-y-6 max-w-[680px]">
+            <div>
+              <h1 className="text-[28px] font-light text-white tracking-tight">Windows Settings</h1>
+              <p className="text-[13px] text-white/60 mt-1">
+                Signed in as <strong className="text-white/90">{userName}</strong>
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {HOME_CATEGORIES.filter(
+                (c) =>
+                  !qLower ||
+                  c.title.toLowerCase().includes(qLower) ||
+                  c.desc.toLowerCase().includes(qLower),
+              ).map((cat) => (
+                <button
+                  key={cat.tab}
+                  type="button"
+                  onClick={() => setActiveTab(cat.tab)}
+                  className="p-4 bg-[#141414] hover:bg-[#1e1e1e] border border-white/10 hover:border-white/30 text-left flex items-start gap-3 transition-colors cursor-default"
+                >
+                  <span style={{ color: personalization.accentColor }} className="text-[20px] leading-none mt-0.5 shrink-0">
+                    {cat.glyph}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-[14px] font-medium text-white">{cat.title}</div>
+                    <div className="text-[11.5px] text-white/60 mt-0.5 leading-snug">{cat.desc}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {activeTab === 'Background' && (
           <div className="space-y-5 max-w-[600px]">
             <h1 className="text-[28px] font-light text-white tracking-tight">Background</h1>
-
-            <DesktopPreviewMockup
-              bgStyle={previewStyle}
-              accentColor={personalization.accentColor}
-            />
+            <DesktopPreviewMockup bgStyle={previewStyle} accentColor={personalization.accentColor} />
 
             <div className="pt-2">
               <label className="block text-[13.5px] text-white/95 mb-2" htmlFor="bg-type-select">
@@ -279,9 +390,7 @@ export function PersonalizationSettingsApp() {
               <select
                 id="bg-type-select"
                 value={personalization.backgroundType}
-                onChange={(e) =>
-                  updatePersonalization({ backgroundType: e.target.value as BackgroundType })
-                }
+                onChange={(e) => updatePersonalization({ backgroundType: e.target.value as BackgroundType })}
                 className={selectClass}
               >
                 <option value="picture">Picture</option>
@@ -302,31 +411,16 @@ export function PersonalizationSettingsApp() {
                           type="button"
                           aria-label={`Wallpaper option ${idx + 1}`}
                           onClick={() => updatePersonalization({ wallpaper: src })}
-                          style={
-                            isSelected
-                              ? { outline: `2px solid ${personalization.accentColor}`, outlineOffset: '1px' }
-                              : undefined
-                          }
+                          style={isSelected ? { outline: `2px solid ${personalization.accentColor}`, outlineOffset: '1px' } : undefined}
                           className="w-[74px] h-[74px] overflow-hidden bg-[#1a1a1a] hover:opacity-90 cursor-default"
                         >
-                          <img
-                            src={src}
-                            alt={`Wallpaper ${idx + 1}`}
-                            draggable={false}
-                            className="w-full h-full object-cover pointer-events-none"
-                          />
+                          <img src={src} alt={`Wallpaper ${idx + 1}`} draggable={false} className="w-full h-full object-cover pointer-events-none" />
                         </button>
                       );
                     })}
                   </div>
 
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleBrowseFile}
-                    className="hidden"
-                  />
+                  <input ref={fileInputRef} type="file" accept="image/*" onChange={handleBrowseFile} className="hidden" />
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
@@ -343,9 +437,7 @@ export function PersonalizationSettingsApp() {
                   <select
                     id="bg-fit-select"
                     value={personalization.backgroundFit}
-                    onChange={(e) =>
-                      updatePersonalization({ backgroundFit: e.target.value as BackgroundFit })
-                    }
+                    onChange={(e) => updatePersonalization({ backgroundFit: e.target.value as BackgroundFit })}
                     className={selectClass}
                   >
                     <option value="fill">Fill</option>
@@ -358,9 +450,7 @@ export function PersonalizationSettingsApp() {
               </>
             ) : (
               <div>
-                <div className="text-[13.5px] text-white/95 mb-2">
-                  Choose your background color
-                </div>
+                <div className="text-[13.5px] text-white/95 mb-2">Choose your background color</div>
                 <div className="grid grid-cols-8 gap-1.5 max-w-[336px]">
                   {WIN10_COLORS.map((color) => {
                     const isSelected = personalization.solidColor === color;
@@ -387,10 +477,7 @@ export function PersonalizationSettingsApp() {
         {activeTab === 'Colors' && (
           <div className="space-y-5 max-w-[600px]">
             <h1 className="text-[28px] font-light text-white tracking-tight">Colors</h1>
-            <DesktopPreviewMockup
-              bgStyle={previewStyle}
-              accentColor={personalization.accentColor}
-            />
+            <DesktopPreviewMockup bgStyle={previewStyle} accentColor={personalization.accentColor} />
             <div>
               <div className="text-[13.5px] text-white/95 mb-2">Choose your accent color</div>
               <div className="grid grid-cols-8 gap-1.5 max-w-[336px]">
@@ -438,84 +525,121 @@ export function PersonalizationSettingsApp() {
                         accentColor: theme.accentColor,
                       })
                     }
-                    style={
-                      isActive ? { borderColor: personalization.accentColor } : undefined
-                    }
+                    style={isActive ? { borderColor: personalization.accentColor } : undefined}
                     className="flex flex-col text-left bg-[#181818] border border-white/15 hover:border-white/40 overflow-hidden cursor-default"
                   >
-                    <img
-                      src={theme.wallpaper}
-                      alt={theme.name}
-                      className="w-full h-[100px] object-cover"
-                    />
+                    <img src={theme.wallpaper} alt={theme.name} className="w-full h-[100px] object-cover" />
                     <div className="flex items-center justify-between px-3 py-2 text-[12.5px]">
                       <span>{theme.name}</span>
-                      <span
-                        style={{ backgroundColor: theme.accentColor }}
-                        className="w-3.5 h-3.5 inline-block"
-                      />
+                      <span style={{ backgroundColor: theme.accentColor }} className="w-3.5 h-3.5 inline-block" />
                     </div>
                   </button>
                 );
               })}
             </div>
-            <div>
-              <button
-                type="button"
-                onClick={() => updatePersonalization(DEFAULT_PERSONALIZATION_SETTINGS)}
-                className="px-4 py-1.5 bg-[#333333] hover:bg-[#444444] text-[13px] border border-white/15 cursor-default"
-              >
-                Reset theme to default
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => updatePersonalization(DEFAULT_PERSONALIZATION_SETTINGS)}
+              className="px-4 py-1.5 bg-[#333333] hover:bg-[#444444] text-[13px] border border-white/15 cursor-default"
+            >
+              Reset theme to default
+            </button>
           </div>
         )}
 
         {activeTab === 'Lock screen' && (
           <div className="space-y-4 max-w-[540px]">
             <h1 className="text-[28px] font-light text-white tracking-tight">Lock screen</h1>
-            <div
-              style={previewStyle}
-              className="relative w-[336px] h-[186px] border border-white/15 flex flex-col justify-end p-4"
-            >
-              <div className="text-[32px] font-light leading-none text-white drop-shadow">
-                09:55
-              </div>
-              <div className="text-[13px] text-white/95 drop-shadow mt-1">
-                Thursday, November 26
-              </div>
+            <div style={previewStyle} className="relative w-[336px] h-[186px] border border-white/15 flex flex-col justify-end p-4">
+              <div className="text-[32px] font-light leading-none text-white drop-shadow">09:55</div>
+              <div className="text-[13px] text-white/95 drop-shadow mt-1">Thursday, November 26</div>
             </div>
             <p className="text-[13px] text-white/65">
-              Lock screen currently mirrors your selected background image.
+              Lock screen mirrors your selected background and supports optional PIN authentication.
             </p>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setLockScreenOpen(true)}
+                style={{ backgroundColor: personalization.accentColor }}
+                className="px-4 py-1.5 text-[13px] text-white cursor-default"
+              >
+                Preview Lock Screen
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('Accounts')}
+                className="px-4 py-1.5 bg-[#333333] hover:bg-[#444444] text-[13px] border border-white/15 cursor-default"
+              >
+                Configure Sign-in PIN
+              </button>
+            </div>
           </div>
         )}
 
         {activeTab === 'Fonts' && (
-          <div className="space-y-4 max-w-[540px]">
+          <div className="space-y-4 max-w-[600px]">
             <h1 className="text-[28px] font-light text-white tracking-tight">Fonts</h1>
-            <div className="p-4 bg-[#181818] border border-white/10 space-y-2">
-              <div className="text-[14px] font-semibold">Segoe UI (System Default)</div>
-              <div className="text-[20px] font-light text-white/90">
-                The quick brown fox jumps over the lazy dog
+            <div className="flex flex-wrap items-center gap-3">
+              <input
+                type="text"
+                value={fontSample}
+                onChange={(e) => setFontSample(e.target.value)}
+                placeholder="Type here to preview font"
+                className="flex-1 min-w-[220px] h-[32px] px-3 bg-[#121212] border border-[#555] text-[13px] text-white outline-none focus:border-[#0078d7]"
+              />
+              <div className="flex items-center gap-2 text-[12px] text-white/75">
+                <span>Size {fontPreviewSize}px</span>
+                <input
+                  type="range"
+                  min={12}
+                  max={32}
+                  value={fontPreviewSize}
+                  onChange={(e) => setFontPreviewSize(Number(e.target.value))}
+                  style={{ accentColor: personalization.accentColor }}
+                />
               </div>
-              <div className="text-[12px] text-white/55">
-                Used across Desktop labels, Taskbar, Start Menu, Calculator, and File Explorer.
-              </div>
+            </div>
+            <div className="space-y-2.5">
+              {SYSTEM_FONTS.map((f) => (
+                <div key={f.name} className="p-3.5 bg-[#181818] border border-white/10">
+                  <div className="flex items-baseline justify-between mb-1">
+                    <span className="text-[13px] font-semibold">{f.name}</span>
+                    <span className="text-[11px] text-white/50">{f.desc}</span>
+                  </div>
+                  <div style={{ fontFamily: f.family, fontSize: `${fontPreviewSize}px` }} className="text-white/95 truncate">
+                    {fontSample || 'The quick brown fox jumps over the lazy dog'}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
 
         {activeTab === 'Start' && (
-          <div className="space-y-4 max-w-[540px]">
+          <div className="space-y-5 max-w-[540px]">
             <h1 className="text-[28px] font-light text-white tracking-tight">Start</h1>
-            <DesktopPreviewMockup
-              bgStyle={previewStyle}
-              accentColor={personalization.accentColor}
-            />
-            <p className="text-[13px] text-white/65">
-              Start Menu uses Windows 10 3-column dark acrylic layout with pinned Productivity and Explore tiles.
-            </p>
+            <DesktopPreviewMockup bgStyle={previewStyle} accentColor={personalization.accentColor} />
+            <div className="space-y-2 pt-2">
+              <SettingsSwitch
+                label="Show more tiles on Start"
+                checked={startMenuSettings.showMoreTiles}
+                accentColor={personalization.accentColor}
+                onChange={() => updateStartMenuSettings({ showMoreTiles: !startMenuSettings.showMoreTiles })}
+              />
+              <SettingsSwitch
+                label="Show app list in Start menu"
+                checked={startMenuSettings.showAppList}
+                accentColor={personalization.accentColor}
+                onChange={() => updateStartMenuSettings({ showAppList: !startMenuSettings.showAppList })}
+              />
+              <SettingsSwitch
+                label="Show recently added apps"
+                checked={startMenuSettings.showRecentlyAdded}
+                accentColor={personalization.accentColor}
+                onChange={() => updateStartMenuSettings({ showRecentlyAdded: !startMenuSettings.showRecentlyAdded })}
+              />
+            </div>
             <button
               type="button"
               onClick={() => closeWindow('settings')}
@@ -529,25 +653,216 @@ export function PersonalizationSettingsApp() {
         {activeTab === 'Display' && (
           <div className="space-y-5 max-w-[540px]">
             <h1 className="text-[28px] font-light text-white tracking-tight">Display</h1>
+
             <div className="p-4 bg-[#181818] border border-white/10 space-y-3">
-              <div className="text-[14px] font-medium">Color &amp; Night light</div>
-              <p className="text-[12.5px] text-white/65">
-                Night light displays warmer colors to help reduce eye strain.
-              </p>
+              <div className="flex items-center justify-between">
+                <span className="text-[14px] font-medium">Brightness and color</span>
+                <span className="text-[12px] text-white/75 tabular-nums">{brightness}%</span>
+              </div>
+              <input
+                type="range"
+                min={20}
+                max={100}
+                value={brightness}
+                aria-label="Brightness level"
+                onChange={(e) => setBrightness(Number(e.target.value))}
+                style={{ accentColor: personalization.accentColor }}
+                className="w-full cursor-pointer"
+              />
+              <SettingsSwitch
+                label="Night light"
+                checked={nightLightEnabled}
+                accentColor={personalization.accentColor}
+                onChange={() => toggleQuickSetting('nightLightEnabled')}
+              />
+            </div>
+
+            <div className="p-4 bg-[#181818] border border-white/10 space-y-3">
+              <div className="text-[14px] font-medium">Scale and layout</div>
+              <div>
+                <label className="block text-[12px] text-white/65 mb-1.5" htmlFor="scale-select">
+                  Change the size of text, apps, and other items
+                </label>
+                <select
+                  id="scale-select"
+                  value={displayScale}
+                  onChange={(e) => setDisplayScale(Number(e.target.value) as 100 | 125 | 150)}
+                  className={selectClass}
+                >
+                  <option value={100}>100% (Recommended)</option>
+                  <option value={125}>125%</option>
+                  <option value={150}>150%</option>
+                </select>
+              </div>
+              <div className="text-[13px] text-white/70">
+                Display resolution: {typeof window !== 'undefined' ? `${window.innerWidth} × ${window.innerHeight}` : '1280 × 720'}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'Network' && (
+          <div className="space-y-5 max-w-[540px]">
+            <h1 className="text-[28px] font-light text-white tracking-tight">Network &amp; Internet</h1>
+            <div className="p-4 bg-[#181818] border border-white/10 space-y-2">
+              <div className="text-[15px] font-medium">
+                {airplaneMode ? '✈ Airplane mode enabled' : wifiEnabled ? `📶 Connected to ${networkName}` : 'Wi-Fi is turned off'}
+              </div>
+              <SettingsSwitch
+                label="Wi-Fi"
+                checked={wifiEnabled && !airplaneMode}
+                accentColor={personalization.accentColor}
+                onChange={() => toggleQuickSetting('wifiEnabled')}
+              />
+              <SettingsSwitch
+                label="Airplane mode"
+                checked={airplaneMode}
+                accentColor={personalization.accentColor}
+                onChange={() => toggleQuickSetting('airplaneMode')}
+              />
+            </div>
+            <div className="p-4 bg-[#181818] border border-white/10 space-y-2">
+              <div className="text-[13.5px] font-medium mb-1">Available networks</div>
+              {['Wi-Fi (Home_5G)', 'Office_Guest', 'Phone Hotspot'].map((ssid) => (
+                <button
+                  key={ssid}
+                  type="button"
+                  onClick={() => setNetworkName(ssid)}
+                  className={`w-full flex items-center justify-between px-3 py-2 text-[13px] border cursor-default ${
+                    networkName === ssid ? 'border-white/40 bg-white/10' : 'border-white/10 hover:bg-white/5'
+                  }`}
+                >
+                  <span>{ssid}</span>
+                  <span className="text-[11px] text-white/65">{networkName === ssid ? 'Connected' : 'Secured'}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'Accounts' && (
+          <div className="space-y-5 max-w-[540px]">
+            <h1 className="text-[28px] font-light text-white tracking-tight">Accounts</h1>
+            <div className="flex items-center gap-4 p-4 bg-[#181818] border border-white/10">
+              <div className="w-14 h-14 rounded-full bg-[#3a3a3a] border border-white/25 flex items-center justify-center text-[22px]">
+                {userName.charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <div className="text-[16px] font-medium">{userName}</div>
+                <div className="text-[12px] text-white/60">Local Account · Administrator</div>
+              </div>
+            </div>
+
+            <div className="p-4 bg-[#181818] border border-white/10 space-y-3">
+              <label className="block text-[13px]">Display name</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={nameInput}
+                  onChange={(e) => setNameInput(e.target.value)}
+                  className="flex-1 h-[32px] px-3 bg-[#0f0f0f] border border-[#555] text-[13px] outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUserName(nameInput);
+                    setAccountSavedMsg('Updated display name');
+                  }}
+                  style={{ backgroundColor: personalization.accentColor }}
+                  className="px-4 h-[32px] text-[12.5px] text-white cursor-default"
+                >
+                  Save
+                </button>
+              </div>
+
+              <label className="block text-[13px] pt-2">Sign-in PIN (Windows Hello)</label>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  value={pinInput}
+                  onChange={(e) => setPinInput(e.target.value)}
+                  placeholder="Enter a PIN (e.g. 1234)"
+                  className="flex-1 h-[32px] px-3 bg-[#0f0f0f] border border-[#555] text-[13px] outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLockPin(pinInput || null);
+                    setAccountSavedMsg(pinInput.trim() ? 'PIN enabled for Lock Screen' : 'PIN removed');
+                  }}
+                  className="px-4 h-[32px] bg-[#333] hover:bg-[#444] border border-white/15 text-[12.5px] cursor-default"
+                >
+                  {pinInput.trim() ? 'Set PIN' : 'Clear PIN'}
+                </button>
+              </div>
+              {accountSavedMsg && <div className="text-[12px] text-[#7cc9ff]">{accountSavedMsg}</div>}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'Apps' && (
+          <div className="space-y-4 max-w-[600px]">
+            <h1 className="text-[28px] font-light text-white tracking-tight">Apps &amp; features</h1>
+            <div className="text-[12.5px] text-white/65">
+              Virtual disk usage: {formatStorageBytes(storageUsedBytes)} of {formatStorageBytes(storageQuotaBytes)}
+            </div>
+            <input
+              type="text"
+              value={appFilter}
+              onChange={(e) => setAppFilter(e.target.value)}
+              placeholder="Search installed apps..."
+              className="w-full max-w-[300px] h-[32px] px-3 bg-[#121212] border border-[#555] text-[13px] outline-none"
+            />
+            <div className="divide-y divide-white/10 border border-white/10 bg-[#141414]">
+              {apps
+                .filter((a) => a.name.toLowerCase().includes(appFilter.trim().toLowerCase()))
+                .map((app) => (
+                  <div key={app.id} className="flex items-center justify-between px-3.5 py-2.5 text-[13px]">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <img src={app.icon} alt="" className="w-5 h-5 object-contain shrink-0" />
+                      <span className="truncate">{app.name}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => openApp(app.id)}
+                      className="px-3 py-1 bg-[#2b2b2b] hover:bg-[#3a3a3a] border border-white/15 text-[12px] cursor-default"
+                    >
+                      Open
+                    </button>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'Time' && (
+          <div className="space-y-4 max-w-[540px]">
+            <h1 className="text-[28px] font-light text-white tracking-tight">Date &amp; time</h1>
+            <div className="p-4 bg-[#181818] border border-white/10 space-y-2">
+              <div className="text-[12px] text-white/60">Current date and time</div>
+              <div className="text-[20px] font-light">{new Date().toLocaleString()}</div>
+              <div className="text-[12.5px] text-white/70">Time zone: {Intl.DateTimeFormat().resolvedOptions().timeZone}</div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'Update' && (
+          <div className="space-y-4 max-w-[540px]">
+            <h1 className="text-[28px] font-light text-white tracking-tight">Windows Update</h1>
+            <div className="p-4 bg-[#181818] border border-white/10 space-y-3">
+              <div className="text-[16px] font-medium">{updateStatus}</div>
+              <div className="text-[12.5px] text-white/65">Last checked: Today</div>
               <button
                 type="button"
-                onClick={() => toggleQuickSetting('nightLightEnabled')}
-                style={nightLightEnabled ? { backgroundColor: personalization.accentColor } : undefined}
-                className={`px-4 py-1.5 text-[13px] border cursor-default ${nightLightEnabled ? 'border-white/30 text-white' : 'bg-[#333333] hover:bg-[#444444] border-white/15'}`}
+                onClick={() => {
+                  setUpdateStatus('Checking for updates...');
+                  window.setTimeout(() => setUpdateStatus("You're up to date"), 900);
+                }}
+                style={{ backgroundColor: personalization.accentColor }}
+                className="px-4 py-1.5 text-[13px] text-white cursor-default"
               >
-                Night light: {nightLightEnabled ? 'On' : 'Off'}
+                Check for updates
               </button>
-            </div>
-            <div className="p-4 bg-[#181818] border border-white/10 space-y-2 text-[13px]">
-              <div className="font-medium">Display resolution</div>
-              <div className="text-white/70">
-                {typeof window !== 'undefined' ? `${window.innerWidth} × ${window.innerHeight}` : '1280 × 720'} (Current viewport)
-              </div>
             </div>
           </div>
         )}

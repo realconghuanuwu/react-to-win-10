@@ -11,6 +11,7 @@ import { FileExplorerApp } from '../Apps/FileExplorerApp';
 import { MediaPlayerApp } from '../Apps/MediaPlayerApp';
 import { NotepadApp } from '../Apps/NotepadApp';
 import { PaintApp } from '../Apps/PaintApp';
+import { PhotosApp } from '../Apps/PhotosApp';
 import { PersonalizationSettingsApp } from '../Apps/PersonalizationSettingsApp';
 import { TaskManagerApp } from '../Apps/TaskManagerApp';
 import { YouTubeDownloaderApp } from '../Apps/YouTubeDownloaderApp';
@@ -66,7 +67,8 @@ export function WindowFrame({ win, onSnapPreview, onSnapDrop }: WindowFrameProps
     appId === 'settings' ||
     appId === 'yt-downloader' ||
     appId === 'pdf-tool' ||
-    appId === 'media-player';
+    appId === 'media-player' ||
+    appId === 'photos';
   const handleTitleBarPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
     if ((e.target as Element).closest('[data-window-control="true"]')) return;
@@ -434,6 +436,8 @@ export function WindowFrame({ win, onSnapPreview, onSnapDrop }: WindowFrameProps
         <YouTubeDownloaderApp />
       ) : appId === 'media-player' ? (
         <MediaPlayerApp windowId={win.id} />
+      ) : appId === 'photos' ? (
+        <PhotosApp windowId={win.id} />
       ) : appId === 'pdf-tool' ? (
         <Suspense fallback={<div className="grid flex-1 place-items-center text-sm text-white">Opening PDF Tool…</div>}>
           <PdfToolApp />

@@ -21,6 +21,8 @@ export function ActionCenter({ positioning, sizeClass }: ActionCenterProps) {
   const nightLightEnabled = useDesktopStore((state) => state.nightLightEnabled);
   const airplaneMode = useDesktopStore((state) => state.airplaneMode);
   const focusAssist = useDesktopStore((state) => state.focusAssist);
+  const brightness = useDesktopStore((state) => state.brightness);
+  const setBrightness = useDesktopStore((state) => state.setBrightness);
   const accentColor = useDesktopStore((state) => state.personalizationSettings.accentColor);
   const toggleQuickSetting = useDesktopStore((state) => state.toggleQuickSetting);
   const openApp = useDesktopStore((state) => state.openApp);
@@ -231,6 +233,25 @@ export function ActionCenter({ positioning, sizeClass }: ActionCenterProps) {
                 {act.sub && <span className="text-[10px] text-white/75 truncate">{act.sub}</span>}
               </button>
             ))}
+          </div>
+
+          {/* Brightness Slider */}
+          <div className="mt-3 pt-2.5 border-t border-white/10 flex items-center gap-2.5">
+            <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true" className="text-white/85 shrink-0">
+              <circle cx="8" cy="8" r="3" />
+              <path d="M8 1.5V3M8 13V14.5M1.5 8H3M13 8H14.5M3.4 3.4L4.5 4.5M11.5 11.5L12.6 12.6M12.6 3.4L11.5 4.5M4.5 11.5L3.4 12.6" strokeLinecap="round" />
+            </svg>
+            <input
+              type="range"
+              min={20}
+              max={100}
+              value={brightness}
+              aria-label="Screen brightness"
+              onChange={(e) => setBrightness(Number(e.target.value))}
+              style={{ accentColor }}
+              className="flex-1 h-1 cursor-pointer"
+            />
+            <span className="w-8 text-right text-[11px] text-white/80 tabular-nums">{brightness}%</span>
           </div>
         </div>
       </PopoverSurface>
