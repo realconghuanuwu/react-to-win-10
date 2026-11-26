@@ -134,6 +134,12 @@ export const DESKTOP_APPS: DesktopAppItem[] = [
     icon: '/assets/icons/pdf-tool.svg',
     showOnDesktop: true,
   },
+  {
+    id: 'terminal',
+    name: 'Windows Terminal',
+    icon: '/assets/icons/terminal.svg',
+    showOnDesktop: true,
+  },
 ];
 
 export interface StartTileGroup {

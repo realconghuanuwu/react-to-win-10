@@ -3,8 +3,8 @@ import { resolveDesktopAppIcon, type DesktopAppItem } from '../../data/desktopAp
 import { getTaskbarThickness, useDesktopStore, type TileSize } from '../../store/useDesktopStore';
 import { useRecycleBinHasItems } from '../../store/useFileSystemStore';
 
-const RECENT_APP_IDS = ['calculator', 'explorer', 'store'];
-const ACCESSORIES_IDS = ['notepad', 'paint', 'snip'];
+const RECENT_APP_IDS = ['terminal', 'calculator', 'explorer', 'store'];
+const ACCESSORIES_IDS = ['notepad', 'paint', 'snip', 'terminal'];
 
 interface StartItemContextMenu {
   appId: string;

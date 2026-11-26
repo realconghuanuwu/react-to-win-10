@@ -219,6 +219,8 @@ interface DesktopState {
   paintOpenNonce: number;
   photosActiveFileId: string | null;
   photosOpenNonce: number;
+  terminalStartProfile: 'cmd' | 'powershell';
+  terminalOpenNonce: number;
   brightness: number;
   displayScale: 100 | 125 | 150;
   lockPin: string | null;
@@ -333,6 +335,7 @@ interface DesktopState {
   openMediaFile: (fileId: string | null) => void;
   openPaintFile: (fileId: string | null) => void;
   openPhotoFile: (fileId: string | null) => void;
+  openTerminal: (profile?: 'cmd' | 'powershell') => void;
   toggleTaskbarApp: (id: string) => void;
   focusWindow: (id: string) => void;
   minimizeWindow: (id: string) => void;
@@ -409,10 +412,11 @@ function createInitialWindowLayout(
   const isPdfTool = appId === 'pdf-tool';
   const isPaint = appId === 'paint';
   const isPhotos = appId === 'photos';
-  const targetWidth = isCalc ? 340 : isOffice || isStudio || isPdfTool ? 1120 : isPaint ? 1080 : isChrome ? 1040 : isPhotos ? 960 : isExplorer ? 940 : isSettings ? 880 : DEFAULT_WIDTH;
-  const targetHeight = isCalc ? 540 : isOffice || isStudio || isPdfTool ? 700 : isPaint ? 680 : isChrome ? 680 : isPhotos ? 640 : isExplorer ? 600 : isSettings ? 600 : DEFAULT_HEIGHT;
-  const minWidth = isCalc ? 320 : isOffice || isPaint ? 680 : isChrome ? 520 : isPhotos || isExplorer ? 620 : isSettings ? 580 : 320;
-  const minHeight = isCalc ? 480 : isOffice ? 460 : isPaint ? 420 : isStudio || isChrome ? 380 : isPdfTool ? 360 : isPhotos || isExplorer ? 400 : isSettings ? 420 : 220;
+  const isTerminal = appId === 'terminal';
+  const targetWidth = isCalc ? 340 : isOffice || isStudio || isPdfTool ? 1120 : isPaint ? 1080 : isChrome ? 1040 : isPhotos ? 960 : isExplorer ? 940 : isSettings ? 880 : isTerminal ? 840 : DEFAULT_WIDTH;
+  const targetHeight = isCalc ? 540 : isOffice || isStudio || isPdfTool ? 700 : isPaint ? 680 : isChrome ? 680 : isPhotos ? 640 : isExplorer ? 600 : isSettings ? 600 : isTerminal ? 520 : DEFAULT_HEIGHT;
+  const minWidth = isCalc ? 320 : isOffice || isPaint ? 680 : isChrome ? 520 : isPhotos || isExplorer ? 620 : isSettings ? 580 : isTerminal ? 520 : 320;
+  const minHeight = isCalc ? 480 : isOffice ? 460 : isPaint ? 420 : isStudio || isChrome ? 380 : isPdfTool ? 360 : isPhotos || isExplorer ? 400 : isSettings ? 420 : isTerminal ? 320 : 220;
 
   const width = Math.min(targetWidth, Math.max(minWidth, vw - 48));
   const height = Math.min(targetHeight, Math.max(minHeight, vh - 48));
@@ -472,6 +476,8 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
   paintOpenNonce: 0,
   photosActiveFileId: null,
   photosOpenNonce: 0,
+  terminalStartProfile: 'cmd',
+  terminalOpenNonce: 0,
   brightness: (() => {
     try {
       const raw = typeof window !== 'undefined' ? window.localStorage.getItem('win10_brightness_v1') : null;
@@ -1470,6 +1476,60 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
         isStartMenuOpen: false,
         photosActiveFileId: fileId,
         photosOpenNonce: state.photosOpenNonce + 1,
+      };
+    }),
+
+  openTerminal: (profile = 'cmd') =>
+    set((state) => {
+      const app = state.apps.find((item) => item.id === 'terminal');
+      if (!app) return state;
+
+      const nextZ = state.topZIndex + 1;
+      const existing = state.windows.find(
+        (w) => (w.appId ?? w.id) === 'terminal' && w.desktopId === state.activeDesktopId,
+      );
+
+      if (existing) {
+        return {
+          windows: state.windows.map((w) =>
+            w.id === existing.id ? { ...w, isMinimized: false, zIndex: nextZ } : w,
+          ),
+          activeAppId: existing.id,
+          topZIndex: nextZ,
+          contextMenuPos: null,
+          winXMenuPos: null,
+          isStartMenuOpen: false,
+          terminalStartProfile: profile,
+          terminalOpenNonce: state.terminalOpenNonce + 1,
+        };
+      }
+
+      const layout = createInitialWindowLayout(
+        'terminal',
+        state.windows.length,
+        state.taskbarSettings,
+      );
+      const winId = allocateWindowId('terminal', state.windows);
+      const newWindow: AppWindow = {
+        id: winId,
+        appId: 'terminal',
+        desktopId: state.activeDesktopId,
+        title: app.name,
+        icon: app.icon,
+        ...layout,
+        zIndex: nextZ,
+        isMinimized: false,
+      };
+
+      return {
+        windows: [...state.windows, newWindow],
+        activeAppId: winId,
+        topZIndex: nextZ,
+        contextMenuPos: null,
+        winXMenuPos: null,
+        isStartMenuOpen: false,
+        terminalStartProfile: profile,
+        terminalOpenNonce: state.terminalOpenNonce + 1,
       };
     }),
 

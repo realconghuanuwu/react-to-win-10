@@ -17,6 +17,7 @@ import { PhotosApp } from '../Apps/PhotosApp';
 import { PersonalizationSettingsApp } from '../Apps/PersonalizationSettingsApp';
 import { SnipApp } from '../Apps/SnipApp';
 import { TaskManagerApp } from '../Apps/TaskManagerApp';
+import { TerminalApp } from '../Apps/TerminalApp';
 import { YouTubeDownloaderApp } from '../Apps/YouTubeDownloaderApp';
 
 const OfficeApp = lazy(() =>
@@ -73,7 +74,8 @@ export function WindowFrame({ win, onSnapPreview, onSnapDrop }: WindowFrameProps
     appId === 'pdf-tool' ||
     appId === 'media-player' ||
     appId === 'photos' ||
-    appId === 'snip';
+    appId === 'snip' ||
+    appId === 'terminal';
   const handleTitleBarPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
     if ((e.target as Element).closest('[data-window-control="true"]')) return;
@@ -445,6 +447,8 @@ export function WindowFrame({ win, onSnapPreview, onSnapDrop }: WindowFrameProps
         <PhotosApp windowId={win.id} />
       ) : appId === 'snip' ? (
         <SnipApp windowId={win.id} />
+      ) : appId === 'terminal' ? (
+        <TerminalApp windowId={win.id} />
       ) : appId === 'pdf-tool' ? (
         <Suspense fallback={<div className="grid flex-1 place-items-center text-sm text-white">Opening PDF Tool…</div>}>
           <PdfToolApp />

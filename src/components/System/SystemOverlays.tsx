@@ -19,6 +19,7 @@ function RunDialog() {
   const setRunDialogOpen = useDesktopStore((s) => s.setRunDialogOpen);
   const addRunHistory = useDesktopStore((s) => s.addRunHistory);
   const openApp = useDesktopStore((s) => s.openApp);
+  const openTerminal = useDesktopStore((s) => s.openTerminal);
   const openSettingsTab = useDesktopStore((s) => s.openSettingsTab);
   const setLockScreenOpen = useDesktopStore((s) => s.setLockScreenOpen);
 
@@ -77,6 +78,12 @@ function RunDialog() {
       openApp('code-studio');
     } else if (lower === 'pdf') {
       openApp('pdf-tool');
+    } else if (lower === 'cmd' || lower === 'cmd.exe') {
+      openTerminal('cmd');
+    } else if (lower === 'powershell' || lower === 'powershell.exe') {
+      openTerminal('powershell');
+    } else if (lower === 'wt' || lower === 'terminal') {
+      openApp('terminal');
     } else if (lower === 'ms-settings:taskbar') {
       openSettingsTab('Taskbar');
     } else if (lower === 'ms-settings:display') {
@@ -597,6 +604,7 @@ function WinXMenu() {
   const pos = useDesktopStore((s) => s.winXMenuPos);
   const setWinXMenuPos = useDesktopStore((s) => s.setWinXMenuPos);
   const openApp = useDesktopStore((s) => s.openApp);
+  const openTerminal = useDesktopStore((s) => s.openTerminal);
   const openSettingsTab = useDesktopStore((s) => s.openSettingsTab);
   const setRunDialogOpen = useDesktopStore((s) => s.setRunDialogOpen);
   const setSearchOpen = useDesktopStore((s) => s.setSearchOpen);
@@ -628,7 +636,7 @@ function WinXMenu() {
   const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
   const vh = typeof window !== 'undefined' ? window.innerHeight : 720;
   const menuW = 220;
-  const menuH = 310;
+  const menuH = 365;
   const left = Math.max(4, Math.min(pos.x, vw - menuW - 4));
   const top = Math.max(4, Math.min(pos.y - menuH, vh - menuH - 44));
 
@@ -649,6 +657,12 @@ function WinXMenu() {
       </button>
       <button type="button" className={itemCls} onClick={() => { openApp('settings'); setWinXMenuPos(null); }}>
         <span>Settings</span>
+      </button>
+      <button type="button" className={itemCls} onClick={() => { openTerminal('cmd'); setWinXMenuPos(null); }}>
+        <span>Command Prompt</span>
+      </button>
+      <button type="button" className={itemCls} onClick={() => { openTerminal('powershell'); setWinXMenuPos(null); }}>
+        <span>Windows PowerShell</span>
       </button>
       <button type="button" className={itemCls} onClick={() => { openApp('task-manager'); setWinXMenuPos(null); }}>
         <span>Task Manager</span>
