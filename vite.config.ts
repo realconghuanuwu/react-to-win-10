@@ -10,7 +10,9 @@ const headers = {
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), ytDlpPlugin()],
-  optimizeDeps: { include: ['monaco-editor', '@webcontainer/api'] },
+  optimizeDeps: {
+    include: ['monaco-editor', '@webcontainer/api', '@lipoe/browser-qpdf', '@lipoe/browser-qpdf/codecs', 'exceljs', 'fflate'],
+  },
   server: { headers },
   preview: { headers },
 });

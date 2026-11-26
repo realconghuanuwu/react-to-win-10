@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { FileSystemTree } from '@webcontainer/api';
 import {
-  AddRegular,
   ArrowUpRightRegular,
   BracesRegular,
   ChevronDownRegular,
@@ -9,10 +8,13 @@ import {
   CodeRegular,
   DismissRegular,
   DocumentRegular,
+  DocumentAddRegular,
   FolderOpenRegular,
   FolderRegular,
   PlayFilled,
+  SearchRegular,
   StopFilled,
+  WindowConsoleRegular,
   WindowRegular,
 } from '@fluentui/react-icons';
 import { editor, languages, Uri } from 'monaco-editor';
@@ -39,19 +41,25 @@ editor.defineTheme('code-studio', {
   base: 'vs-dark',
   inherit: true,
   rules: [
-    { token: 'comment', foreground: '829b9c' },
-    { token: 'keyword', foreground: 'c3afff' },
-    { token: 'string', foreground: 'a3e6be' },
-    { token: 'number', foreground: 'ffc491' },
+    { token: 'comment', foreground: '8B949E' },
+    { token: 'keyword', foreground: '569CD6' },
+    { token: 'string', foreground: 'A5D6FF' },
+    { token: 'number', foreground: '79C0FF' },
+    { token: 'string.key.json', foreground: '7EE787' },
+    { token: 'string.value.json', foreground: 'A5D6FF' },
+    { token: 'tag', foreground: '7EE787' },
   ],
   colors: {
-    'editor.background': '#151e27',
-    'editor.foreground': '#e0eaf0',
-    'editorLineNumber.foreground': '#8496a5',
-    'editorLineNumber.activeForeground': '#bfe7da',
-    'editor.lineHighlightBackground': '#1d2b36',
-    'editor.selectionBackground': '#2e504e',
-    'editorCursor.foreground': '#8be3c3',
+    'editor.background': '#121314',
+    'editor.foreground': '#BBBEBF',
+    'editorLineNumber.foreground': '#858889',
+    'editorLineNumber.activeForeground': '#BBBEBF',
+    'editor.lineHighlightBackground': '#242526',
+    'editor.selectionBackground': '#276782DD',
+    'editor.inactiveSelectionBackground': '#27678260',
+    'editorCursor.foreground': '#BBBEBF',
+    'editorWidget.background': '#191A1B',
+    'editorWidget.border': '#333536',
   },
 });
 
@@ -118,7 +126,8 @@ export default function CodeStudioApp() {
   const [activeFile, setActiveFile] = useState<string | null>(() => Object.hasOwn(files, 'server.js') ? 'server.js' : 'package.json');
   const [openFiles, setOpenFiles] = useState<string[]>(() => activeFile ? [activeFile] : []);
   const [collapsedFolders, setCollapsedFolders] = useState(() => new Set<string>());
-  const [showFiles, setShowFiles] = useState(true);
+  const [sidebar, setSidebar] = useState<'files' | 'search' | null>('files');
+  const [query, setQuery] = useState('');
   const [position, setPosition] = useState({ lineNumber: 1, column: 1 });
   const [language, setLanguage] = useState('');
   const [newPath, setNewPath] = useState<string | null>(null);
@@ -138,6 +147,9 @@ export default function CodeStudioApp() {
   const runRef = useRef<AbortController | null>(null);
   const outputRef = useRef<HTMLPreElement>(null);
   const tree = useMemo(() => toFileTree(files), [files]);
+  const searchResults = sidebar === 'search' && query.trim()
+    ? Object.keys(files).filter((path) => path.toLowerCase().includes(query.trim().toLowerCase()))
+    : [];
 
   useEffect(() => {
     const instance = editor.create(editorHost.current!, {
@@ -146,7 +158,7 @@ export default function CodeStudioApp() {
       automaticLayout: true,
       fontFamily: 'Consolas, monospace',
       fontSize: 13,
-      lineHeight: 21,
+      lineHeight: 22,
       minimap: { enabled: false },
       padding: { top: 12, bottom: 12 },
       scrollBeyondLastLine: false,
@@ -219,6 +231,7 @@ export default function CodeStudioApp() {
     setActiveFile(path);
     const windowWidth = editorHost.current?.closest('.code-studio')?.clientWidth ?? Infinity;
     if (windowWidth <= 700) setShowPreview(false);
+    if (windowWidth <= 420) setSidebar(null);
   }
 
   function closeFile(path: string) {
@@ -293,11 +306,7 @@ export default function CodeStudioApp() {
   return (
     <div className="code-studio">
       <header className="code-studio-toolbar">
-        <button className="code-studio-action" type="button" aria-label="Explorer" title="Toggle Explorer"
-          aria-pressed={showFiles} onClick={() => setShowFiles(!showFiles)}>
-          <FolderOpenRegular aria-hidden />
-        </button>
-        <span className="code-studio-project" title="Node Playground">Node Playground</span>
+        <span className="code-studio-project"><FolderRegular aria-hidden /> Node Playground</span>
         {preview && (
           <button className="code-studio-action" type="button" aria-label="Preview" title="Toggle Preview"
             aria-pressed={showPreview} onClick={() => setShowPreview(!showPreview)}>
@@ -310,7 +319,21 @@ export default function CodeStudioApp() {
         </button>
       </header>
       <div className="code-studio-workspace">
-        {showFiles && (
+        <nav className="code-studio-rail" aria-label="Workspace tools">
+          <button className="code-studio-action" type="button" aria-label="Explorer" title="Toggle Explorer"
+            aria-pressed={sidebar === 'files'} onClick={() => setSidebar(sidebar === 'files' ? null : 'files')}>
+            <FolderOpenRegular aria-hidden />
+          </button>
+          <button className="code-studio-action" type="button" aria-label="Find files" title="Find files"
+            aria-pressed={sidebar === 'search'} onClick={() => setSidebar(sidebar === 'search' ? null : 'search')}>
+            <SearchRegular aria-hidden />
+          </button>
+          <button className="code-studio-action code-studio-rail-output" type="button" aria-label="Server output" title="Toggle server output"
+            aria-pressed={showOutput} onClick={() => setShowOutput(!showOutput)}>
+            <WindowConsoleRegular aria-hidden />
+          </button>
+        </nav>
+        {sidebar === 'files' && (
           <aside className="code-studio-files" aria-label="Project files">
             <div className="code-studio-heading">
               <span>Explorer</span>
@@ -319,7 +342,7 @@ export default function CodeStudioApp() {
                   setNewPath(newPath === null ? '' : null);
                   setFileError('');
                 }}>
-                <AddRegular aria-hidden />
+                <DocumentAddRegular aria-hidden />
               </button>
             </div>
             {newPath !== null && (
@@ -342,6 +365,27 @@ export default function CodeStudioApp() {
             </div>
           </aside>
         )}
+        {sidebar === 'search' && (
+          <aside className="code-studio-files" aria-label="Find project files">
+            <div className="code-studio-heading">Find files</div>
+            <form className="code-studio-add" role="search" onSubmit={(event) => {
+              event.preventDefault();
+              if (searchResults[0]) openFile(searchResults[0]);
+            }}>
+              <input aria-label="Search by file name" placeholder="Search by file name" value={query} autoFocus
+                onChange={(event) => setQuery(event.target.value)} />
+            </form>
+            <div className="code-studio-tree code-studio-results">
+              {searchResults.map((path) => (
+                <button type="button" key={path} title={path} aria-current={activeFile === path ? 'true' : undefined}
+                  onClick={() => openFile(path)}>
+                  <FileIcon path={path} /><span>{path}</span>
+                </button>
+              ))}
+              {query.trim() && searchResults.length === 0 && <p role="status">No matching files.</p>}
+            </div>
+          </aside>
+        )}
         <div className="code-studio-main">
           <div className="code-studio-panes" data-preview={Boolean(preview && showPreview)}>
             <section className="code-studio-source" aria-label="Editor">
@@ -361,6 +405,7 @@ export default function CodeStudioApp() {
               </div>
               {activeFile ? (
                 <div className="code-studio-path" aria-label="File path" title={activeFile}>
+                  <FileIcon path={activeFile} />
                   {activeFile.split('/').map((part, index) => (
                     <span key={index}>{index > 0 && <ChevronRightRegular aria-hidden />}{part}</span>
                   ))}
@@ -382,16 +427,18 @@ export default function CodeStudioApp() {
               </section>
             )}
           </div>
-          <section className="code-studio-output" aria-label="Output">
-            <div className="code-studio-heading">
-              <button className="code-studio-action" type="button" aria-expanded={showOutput} onClick={() => setShowOutput(!showOutput)}>
-                {showOutput ? <ChevronDownRegular aria-hidden /> : <ChevronRightRegular aria-hidden />}
-                Output
-              </button>
-            </div>
-            {showOutput && <pre ref={outputRef} tabIndex={0} aria-label="Server output">{output || 'Run the project to see output.'}</pre>}
+          {(showOutput || runError || storageError) && <section className="code-studio-output" aria-label="Output">
+            {showOutput && <>
+              <div className="code-studio-heading">
+                <span><WindowConsoleRegular aria-hidden /> Server output</span>
+                <button className="code-studio-action" type="button" aria-label="Hide output" title="Hide output" onClick={() => setShowOutput(false)}>
+                  <DismissRegular aria-hidden />
+                </button>
+              </div>
+              <pre ref={outputRef} tabIndex={0} aria-label="Server output">{output || 'Run the project to see output.'}</pre>
+            </>}
             {(runError || storageError) && <div className="code-studio-error" role="alert">{[runError, storageError].filter(Boolean).join(' ')}</div>}
-          </section>
+          </section>}
         </div>
       </div>
       <footer className="code-studio-status">

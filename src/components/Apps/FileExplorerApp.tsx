@@ -7,6 +7,7 @@ import {
   type FsNode,
 } from '../../store/useFileSystemStore';
 import { getFileTypeInfo } from '../../utils/fileTypes';
+import { openVirtualFile } from '../../utils/openVirtualFile';
 import {
   ExplorerContextMenu,
   type ExplorerSortField,
@@ -40,9 +41,8 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
   const activeAppId = useDesktopStore((state) => state.activeAppId);
   const setWindowTitle = useDesktopStore((state) => state.setWindowTitle);
   const explorerStartFolderId = useDesktopStore((state) => state.explorerStartFolderId);
-  const openNotepadFile = useDesktopStore((state) => state.openNotepadFile);
-  const openOfficeFile = useDesktopStore((state) => state.openOfficeFile);
-  const openMediaFile = useDesktopStore((state) => state.openMediaFile);
+  const explorerReveal = useDesktopStore((state) => state.explorerReveal);
+  const appliedReveal = useRef<typeof explorerReveal>(null);
 
   const [history, setHistory] = useState<string[]>([initialFolderId]);
   const [historyIdx, setHistoryIdx] = useState(0);
@@ -51,6 +51,7 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
   useEffect(() => {
     if (
       windowId === 'explorer' &&
+      !explorerReveal &&
       explorerStartFolderId !== prevStartFolderRef.current &&
       useFileSystemStore.getState().nodes[explorerStartFolderId]
     ) {
@@ -58,7 +59,7 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
       setHistory([explorerStartFolderId]);
       setHistoryIdx(0);
     }
-  }, [windowId, explorerStartFolderId]);
+  }, [windowId, explorerStartFolderId, explorerReveal]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
@@ -123,6 +124,27 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
     },
     [nodes, currentFolderId, history, historyIdx],
   );
+
+  useEffect(() => {
+    if (windowId !== 'explorer' || !explorerReveal || appliedReveal.current === explorerReveal) return;
+    const { folderId, fileId } = explorerReveal;
+    if (nodes[fileId]?.parentId !== folderId || !nodes[folderId]) return;
+
+    appliedReveal.current = explorerReveal;
+    prevStartFolderRef.current = folderId;
+    navigateTo(folderId);
+    setSearchQuery('');
+    setRenamingId(null);
+    setContextMenu(null);
+    setSelectedIds([fileId]);
+  }, [windowId, explorerReveal, navigateTo, nodes]);
+
+  useEffect(() => {
+    if (windowId !== 'explorer' || explorerReveal?.folderId !== currentFolderId ||
+        !selectedIds.includes(explorerReveal.fileId)) return;
+    rootRef.current?.querySelector(`[data-file-id="${CSS.escape(explorerReveal.fileId)}"]`)
+      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [windowId, explorerReveal, currentFolderId, selectedIds]);
 
   const canGoBack = historyIdx > 0;
   const canGoForward = historyIdx < history.length - 1;
@@ -304,22 +326,7 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
   const handleOpenNode = (item: FsNode) => {
     if (currentFolderId === 'recycle-bin') return;
     if (item.kind === 'file') {
-      const lower = item.name.toLowerCase();
-      if (lower.endsWith('.unidoc') || lower.endsWith('.doc') || lower.endsWith('.docx')) {
-        openOfficeFile('word', item.id);
-      } else if (lower.endsWith('.unisheet') || lower.endsWith('.xls') || lower.endsWith('.xlsx')) {
-        openOfficeFile('excel', item.id);
-      } else if (
-        item.blobId ||
-        lower.endsWith('.mp4') ||
-        lower.endsWith('.webm') ||
-        lower.endsWith('.mp3') ||
-        lower.endsWith('.m4a')
-      ) {
-        openMediaFile(item.id);
-      } else {
-        openNotepadFile(item.id);
-      }
+      openVirtualFile(item.id);
     } else {
       navigateTo(item.id);
     }
@@ -480,6 +487,8 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
     return (
       <div
         key={item.id}
+        data-file-id={item.kind === 'file' ? item.id : undefined}
+        aria-pressed={isSelected}
         role="button"
         tabIndex={0}
         onClick={(e) => {

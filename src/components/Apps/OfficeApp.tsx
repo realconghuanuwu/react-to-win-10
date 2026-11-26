@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { createUniver, LocaleType, mergeLocales } from '@univerjs/presets';
+import { createUniver, LocaleType, mergeLocales, type IDocumentData, type IWorkbookData } from '@univerjs/presets';
 import { UniverDocsCorePreset } from '@univerjs/preset-docs-core';
 import UniverPresetDocsCoreEnUS from '@univerjs/preset-docs-core/locales/en-US';
 import { UniverSheetsCorePreset } from '@univerjs/preset-sheets-core';
@@ -22,7 +22,7 @@ type WordView = 'home' | 'editor';
 const DEFAULT_DOC_TITLE = 'Document1.unidoc';
 const DEFAULT_SHEET_TITLE = 'Book1.unisheet';
 
-function createStarterWorkbookSnapshot(title: string) {
+function createBlankWorkbookSnapshot(title: string) {
   return {
     id: `sheet-${Date.now()}`,
     name: title,
@@ -33,33 +33,7 @@ function createStarterWorkbookSnapshot(title: string) {
         name: 'Sheet1',
         rowCount: 100,
         columnCount: 26,
-        cellData: {
-          0: {
-            0: { v: 'Item', s: { bl: 1 } },
-            1: { v: 'Category', s: { bl: 1 } },
-            2: { v: 'Qty', s: { bl: 1 } },
-            3: { v: 'Unit Price', s: { bl: 1 } },
-            4: { v: 'Total', s: { bl: 1 } },
-          },
-          1: {
-            0: { v: 'Windows 10 Pro License' },
-            1: { v: 'Software' },
-            2: { v: 2 },
-            3: { v: 199 },
-            4: { f: '=C2*D2' },
-          },
-          2: {
-            0: { v: 'Microsoft 365 Family' },
-            1: { v: 'Subscription' },
-            2: { v: 1 },
-            3: { v: 99 },
-            4: { f: '=C3*D3' },
-          },
-          3: {
-            0: { v: 'Total Budget', s: { bl: 1 } },
-            4: { f: '=SUM(E2:E3)', s: { bl: 1 } },
-          },
-        },
+        cellData: {},
       },
     },
   };
@@ -68,6 +42,9 @@ function createStarterWorkbookSnapshot(title: string) {
 export function OfficeApp({ mode, windowId }: OfficeAppProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const univerApiRef = useRef<ReturnType<typeof createUniver>['univerAPI'] | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const importedSnapshot = useRef<object | null>(null);
+  const importRequest = useRef(0);
 
   const officeActiveFileId = useDesktopStore((state) => state.officeActiveFileId);
   const officeOpenNonce = useDesktopStore((state) => state.officeOpenNonce);
@@ -79,6 +56,7 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
   const updateFileContent = useFileSystemStore((state) => state.updateFileContent);
 
   const extension = mode === 'word' ? '.unidoc' : '.unisheet';
+  const officeExtension = mode === 'word' ? '.docx' : '.xlsx';
   const defaultTitle = mode === 'word' ? DEFAULT_DOC_TITLE : DEFAULT_SHEET_TITLE;
   const brandColor = mode === 'word' ? '#2b579a' : '#107c41';
   const brandHover = mode === 'word' ? 'hover:bg-[#1a3c70]' : 'hover:bg-[#0c6434]';
@@ -91,10 +69,16 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
   const [statusMessage, setStatusMessage] = useState<string>('');
   const [showOpenModal, setShowOpenModal] = useState<boolean>(false);
   const [reloadNonce, setReloadNonce] = useState<number>(0);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState('');
+  const [exporting, setExporting] = useState(false);
+
+  useEffect(() => () => { importRequest.current++; }, []);
 
   // Sync incoming file open from Desktop / Explorer => go straight to editor
   useEffect(() => {
     if (officeOpenNonce === 0) return;
+    const nodes = useFileSystemStore.getState().nodes;
     if (officeActiveFileId && nodes[officeActiveFileId]?.kind === 'file') {
       const targetNode = nodes[officeActiveFileId];
       const lower = targetNode.name.toLowerCase();
@@ -103,13 +87,17 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
           ? lower.endsWith('.unidoc') || lower.endsWith('.doc') || lower.endsWith('.docx')
           : lower.endsWith('.unisheet') || lower.endsWith('.xls') || lower.endsWith('.xlsx');
       if (matchesMode) {
+        importRequest.current++;
+        setImporting(false);
+        importedSnapshot.current = null;
         setCurrentFileId(targetNode.id);
         setDocumentTitle(targetNode.name);
         setView('editor');
+        setShowOpenModal(false);
         setReloadNonce((n) => n + 1);
       }
     }
-  }, [officeActiveFileId, officeOpenNonce, mode, nodes]);
+  }, [officeActiveFileId, officeOpenNonce, mode]);
 
   // Update window title bar
   useEffect(() => {
@@ -175,7 +163,7 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
     const stopObserver = window.setTimeout(() => bgObserver.disconnect(), 3000);
 
     // Load saved snapshot or create fresh document
-    let parsedSnapshot: Record<string, unknown> | null = null;
+    let parsedSnapshot = importedSnapshot.current;
     if (currentFileId) {
       const fileNode = useFileSystemStore.getState().nodes[currentFileId];
       if (fileNode?.kind === 'file' && fileNode.content) {
@@ -193,22 +181,14 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
           parsedSnapshot as Parameters<typeof univerAPI.createDocument>[0],
         );
       } else {
-        const doc = univerAPI.createDocument({
+        univerAPI.createDocument({
           id: `doc-${Date.now()}`,
           title: documentTitle,
         });
-        try {
-          doc.insertText(
-            0,
-            'Welcome to Microsoft Word (UniverJS)\rStart typing your document here.',
-          );
-        } catch {
-          // blank document is fine
-        }
       }
     } else {
       const sheetData = (parsedSnapshot ??
-        createStarterWorkbookSnapshot(documentTitle)) as Parameters<
+        createBlankWorkbookSnapshot(documentTitle)) as Parameters<
         typeof univerAPI.createWorkbook
       >[0];
       univerAPI.createWorkbook(sheetData);
@@ -242,31 +222,23 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
-  const getCurrentSnapshotJson = (): string | null => {
+  const getCurrentSnapshot = () => {
     const api = univerApiRef.current;
     if (!api) return null;
     if (mode === 'word') {
       const doc = api.getActiveDocument();
       if (!doc) return null;
-      return JSON.stringify(doc.save());
+      return doc.save();
     }
     const wb = api.getActiveWorkbook();
     if (!wb) return null;
-    return JSON.stringify(wb.save());
+    return wb.save();
   };
 
   const handleNew = () => {
+    importedSnapshot.current = null;
     setCurrentFileId(null);
     setDocumentTitle(defaultTitle);
-    setView('editor');
-    setReloadNonce((n) => n + 1);
-  };
-
-  const handleOpenFileFromHome = (fileId: string) => {
-    const target = nodes[fileId];
-    if (!target || target.kind !== 'file') return;
-    setCurrentFileId(target.id);
-    setDocumentTitle(target.name);
     setView('editor');
     setReloadNonce((n) => n + 1);
   };
@@ -274,6 +246,7 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
   const handleOpenSavedFile = (fileId: string) => {
     const target = nodes[fileId];
     if (!target || target.kind !== 'file') return;
+    importedSnapshot.current = null;
     setCurrentFileId(target.id);
     setDocumentTitle(target.name);
     setShowOpenModal(false);
@@ -284,8 +257,9 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
 
   /** Save to virtual Win10 FS (Documents folder) */
   const handleSaveToWin10 = () => {
-    const serialized = getCurrentSnapshotJson();
-    if (!serialized) { setStatusMessage('Nothing to save'); return; }
+    const snapshot = getCurrentSnapshot();
+    if (!snapshot) { setStatusMessage('Nothing to save'); return; }
+    const serialized = JSON.stringify(snapshot);
 
     if (currentFileId && nodes[currentFileId]?.kind === 'file') {
       updateFileContent(currentFileId, serialized);
@@ -294,7 +268,7 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
     }
 
     const baseName =
-      documentTitle.replace(/\.(unidoc|unisheet)$/i, '') ||
+      documentTitle.replace(/\.(unidoc|unisheet|docx?|xlsx?)$/i, '') ||
       (mode === 'word' ? 'Document' : 'Book');
     const desiredName = `${baseName}${extension}`;
     const targetFolderId = nodes.documents ? 'documents' : 'desktop';
@@ -309,39 +283,78 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
     }
   };
 
-  /** Download to real local PC as .json (browser download API) */
-  const handleSaveToLocal = () => {
-    const serialized = getCurrentSnapshotJson();
-    if (!serialized) { setStatusMessage('Nothing to save'); return; }
-    const blob = new Blob([serialized], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${documentTitle.replace(/\.(unidoc|unisheet)$/i, '')}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    setStatusMessage('Saved to your local PC (Downloads)');
+  const handleOpenLocal = async (file: File) => {
+    const request = ++importRequest.current;
+    setImporting(true);
+    setImportError('');
+    try {
+      if (!file.name.toLowerCase().endsWith(officeExtension)) {
+        throw new Error(`Choose a ${officeExtension} file.`);
+      }
+      if (file.size > 32 * 1024 * 1024) throw new Error('This file exceeds 32 MB.');
+      const buffer = await file.arrayBuffer();
+      const snapshot = mode === 'word'
+        ? (await import('./officeDocx')).importDocx(buffer, file.name)
+        : await (await import('./officeXlsx')).importXlsx(buffer, file.name);
+      if (request !== importRequest.current) return;
+      importedSnapshot.current = snapshot;
+      setCurrentFileId(null);
+      setDocumentTitle(file.name);
+      setShowOpenModal(false);
+      setView('editor');
+      setReloadNonce((n) => n + 1);
+      setStatusMessage(`Opened ${file.name}`);
+    } catch (error) {
+      if (request === importRequest.current) {
+        setImportError(error instanceof Error ? `Could not open file. ${error.message}` : 'Could not open file.');
+      }
+    } finally {
+      if (request === importRequest.current) setImporting(false);
+    }
   };
 
-  // ── Render: Home Screen (Word or Excel) ──────────────────────────────────
-  if (view === 'home') {
-    return (
-      <OfficeHomeScreen
-        mode={mode}
-        recentFiles={savedOfficeFiles}
-        onNewBlank={handleNew}
-        onOpenFile={handleOpenFileFromHome}
-        onOpenFromPc={() => setShowOpenModal(true)}
-      />
-    );
-  }
+  const handleSaveToLocal = async () => {
+    const snapshot = getCurrentSnapshot();
+    if (!snapshot) { setStatusMessage('Nothing to save'); return; }
+    setExporting(true);
+    try {
+      const blob = mode === 'word'
+        ? (await import('./officeDocx')).exportDocx(snapshot as IDocumentData)
+        : await (await import('./officeXlsx')).exportXlsx(snapshot as IWorkbookData);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${documentTitle.replace(/\.(unidoc|unisheet|docx?|xlsx?)$/i, '')}${officeExtension}`;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+      setStatusMessage(`Downloaded ${link.download}`);
+    } catch {
+      setStatusMessage(`Could not export ${officeExtension}.`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const showOpen = () => {
+    setImportError('');
+    setShowOpenModal(true);
+  };
+
+  const closeOpen = () => {
+    if (importing) return;
+    setShowOpenModal(false);
+  };
 
   // ── Render: Editor (Word or Excel) ────────────────────────────────────────
   return (
     <div
-      data-testid={`office-${mode}-app`}
+      data-testid={view === 'editor' ? `office-${mode}-app` : undefined}
       className="flex-1 flex flex-col bg-[#f3f2f1] overflow-hidden select-none relative"
     >
+      {view === 'home' ? (
+        <OfficeHomeScreen mode={mode} recentFiles={savedOfficeFiles} onNewBlank={handleNew}
+          onOpenFile={handleOpenSavedFile} onOpenFromPc={showOpen} />
+      ) : <>
       {/* Office Top Action Bar */}
       <div
         style={{ backgroundColor: brandColor }}
@@ -371,7 +384,7 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
             {documentTitle}
           </span>
           {statusMessage && (
-            <span className="ml-2 px-2 py-0.5 rounded bg-black/20 text-[11px] text-white/90 truncate">
+            <span role="status" className="ml-2 px-2 py-0.5 rounded bg-black/20 text-[11px] text-white/90 truncate">
               {statusMessage}
             </span>
           )}
@@ -387,7 +400,7 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
           </button>
           <button
             type="button"
-            onClick={() => setShowOpenModal(true)}
+            onClick={showOpen}
             className={`px-2.5 py-1 rounded text-[12px] transition-colors cursor-default ${brandHover}`}
           >
             Open
@@ -402,9 +415,10 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
           <button
             type="button"
             onClick={handleSaveToLocal}
+            disabled={exporting}
             className={`px-2.5 py-1 rounded text-[12px] font-medium bg-white/15 transition-colors cursor-default ${brandHover}`}
           >
-            Save to PC
+            {exporting ? 'Exporting…' : `Save ${officeExtension} to PC`}
           </button>
           <span className="mx-1 h-4 w-[1px] bg-white/25" />
           <button
@@ -422,15 +436,19 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
         ref={containerRef}
         className="flex-1 min-h-0 w-full relative overflow-hidden bg-[#b2b2b2]"
       />
+      </>}
 
       {/* Open Saved File Modal */}
       {showOpenModal && (
         <div
           className="absolute inset-0 z-50 bg-black/35 flex items-center justify-center p-4"
-          onClick={() => setShowOpenModal(false)}
+          onClick={closeOpen}
         >
           <div
             className="w-full max-w-md bg-white border border-[#cccccc] shadow-2xl text-[#222222] flex flex-col"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Open ${appLabel} file`}
             onClick={(e) => e.stopPropagation()}
           >
             <div
@@ -438,15 +456,35 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
               className="px-4 py-2.5 text-white flex items-center justify-between"
             >
               <span className="text-[13px] font-semibold">
-                Open {appLabel} File ({extension})
+                Open {appLabel} file
               </span>
               <button
                 type="button"
-                onClick={() => setShowOpenModal(false)}
+                onClick={closeOpen}
+                disabled={importing}
+                aria-label="Close"
                 className="text-white/85 hover:text-white text-[14px] px-1 cursor-default"
               >
                 ✕
               </button>
+            </div>
+            <div className="px-3 py-3 border-b border-[#eeeeee]">
+              <input ref={fileInputRef} type="file" accept={officeExtension} hidden
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0];
+                  event.currentTarget.value = '';
+                  if (file) void handleOpenLocal(file);
+                }} />
+              <button type="button" onClick={() => fileInputRef.current?.click()} disabled={importing}
+                className="px-3 py-1.5 bg-white border border-[#cccccc] hover:bg-[#e8e8e8] text-[12px]">
+                {importing ? 'Opening…' : `Browse this PC (${officeExtension})`}
+              </button>
+              <p className="mt-2 text-[11px] text-[#605e5c]">
+                {mode === 'word'
+                  ? 'Supports text and basic formatting. Complex layouts, tables and images may be simplified or omitted.'
+                  : 'Supports cell data, basic formulas and number formats. Charts, merged cells and advanced formatting may be omitted.'}
+              </p>
+              {importError && <p role="alert" className="mt-2 text-[12px] text-[#a4262c] break-words">{importError}</p>}
             </div>
             <div className="p-3 max-h-64 overflow-y-auto win10-scroll">
               {savedOfficeFiles.length === 0 ? (
@@ -460,6 +498,7 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
                       <button
                         type="button"
                         onClick={() => handleOpenSavedFile(file.id)}
+                        disabled={importing}
                         className="w-full text-left px-3 py-2 hover:bg-[#f3f2f1] flex items-center justify-between text-[12px] cursor-default"
                       >
                         <span className="font-medium truncate">{file.name}</span>
@@ -475,7 +514,8 @@ export function OfficeApp({ mode, windowId }: OfficeAppProps) {
             <div className="px-4 py-2 bg-[#f3f2f1] border-t border-[#e0e0e0] flex justify-end">
               <button
                 type="button"
-                onClick={() => setShowOpenModal(false)}
+                onClick={closeOpen}
+                disabled={importing}
                 className="px-3 py-1 bg-white border border-[#cccccc] hover:bg-[#e8e8e8] text-[12px] cursor-default"
               >
                 Cancel

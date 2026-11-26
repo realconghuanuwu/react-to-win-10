@@ -12,12 +12,18 @@
   "dependencies": {
     "@fluentui/react-components": "^9.75.3",
     "@fluentui/react-icons": "^2.0.347",
+    "@lipoe/browser-qpdf": "0.4.0",
+    "@pdf-lib/fontkit": "^1.1.1",
     "@univerjs/preset-docs-core": "^1.6.2",
     "@univerjs/preset-sheets-core": "^1.6.2",
     "@univerjs/presets": "^1.6.2",
     "@webcontainer/api": "1.6.4",
+    "exceljs": "4.4.0",
+    "fflate": "^0.8.3",
     "idb": "^8.0.4",
     "monaco-editor": "0.58.0",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.5.438",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "zustand": "^5.1.0"

@@ -17,6 +17,7 @@ const OfficeApp = lazy(() =>
   import('../Apps/OfficeApp').then((mod) => ({ default: mod.OfficeApp })),
 );
 const CodeStudioApp = lazy(() => import('../Apps/CodeStudioApp'));
+const PdfToolApp = lazy(() => import('../Apps/pdf/PdfToolApp'));
 
 type ResizeDirection = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
@@ -56,6 +57,7 @@ export function WindowFrame({ win }: WindowFrameProps) {
     isExplorerApp ||
     win.id === 'settings' ||
     win.id === 'yt-downloader' ||
+    win.id === 'pdf-tool' ||
     win.id === 'media-player';
   const dragSessionRef = useRef<boolean>(false);
 
@@ -363,6 +365,10 @@ export function WindowFrame({ win }: WindowFrameProps) {
         <YouTubeDownloaderApp />
       ) : win.id === 'media-player' ? (
         <MediaPlayerApp windowId={win.id} />
+      ) : win.id === 'pdf-tool' ? (
+        <Suspense fallback={<div className="grid flex-1 place-items-center text-sm text-white">Opening PDF Tool…</div>}>
+          <PdfToolApp />
+        </Suspense>
       ) : isExplorerApp ? (
         <FileExplorerApp
           windowId={win.id}

@@ -77,7 +77,7 @@ export const DESKTOP_APPS: DesktopAppItem[] = [
   },
   {
     id: 'code-studio',
-    name: 'Code Studio',
+    name: 'Visual Studio Code',
     icon: '/assets/icons/code-studio.svg',
     showOnDesktop: true,
   },
@@ -122,6 +122,12 @@ export const DESKTOP_APPS: DesktopAppItem[] = [
     name: 'Media Player',
     icon: '/assets/icons/media-file.svg',
     showOnDesktop: false,
+  },
+  {
+    id: 'pdf-tool',
+    name: 'PDF Tool',
+    icon: '/assets/icons/pdf-tool.svg',
+    showOnDesktop: true,
   },
 ];
 

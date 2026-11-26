@@ -39,7 +39,7 @@ export const DEFAULT_TASKBAR_SETTINGS: TaskbarSettings = {
   showBadges: true,
   location: 'bottom',
   combineButtons: 'always',
-  searchMode: 'hidden',
+  searchMode: 'box',
   showCortana: false,
   showTaskView: false,
   showPeople: false,
@@ -160,6 +160,7 @@ interface DesktopState {
   isTaskViewOpen: boolean;
   isPeekingDesktop: boolean;
   explorerStartFolderId: string;
+  explorerReveal: { folderId: string; fileId: string } | null;
   notepadActiveFileId: string | null;
   notepadOpenNonce: number;
   officeActiveFileId: string | null;
@@ -211,7 +212,7 @@ interface DesktopState {
   setIconPosition: (id: string, slot: GridSlot) => void;
   setRenamingIconId: (id: string | null) => void;
   renameShortcut: (id: string, newLabel: string) => void;
-  openApp: (id: string, explorerFolderId?: string) => void;
+  openApp: (id: string, explorerFolderId?: string, revealFileId?: string) => void;
   openNotepadFile: (fileId: string | null) => void;
   openOfficeFile: (appId: 'word' | 'excel', fileId: string | null) => void;
   openMediaFile: (fileId: string | null) => void;
@@ -219,6 +220,7 @@ interface DesktopState {
   focusWindow: (id: string) => void;
   minimizeWindow: (id: string) => void;
   toggleMaximizeWindow: (id: string) => void;
+  snapActiveWindow: (side: 'left' | 'right') => boolean;
   closeWindow: (id: string) => void;
   updateWindowBounds: (id: string, bounds: WindowBounds, unmaximize?: boolean) => void;
   setWindowTitle: (id: string, title: string) => void;
@@ -238,11 +240,23 @@ function getTopVisibleWindowId(windows: AppWindow[]): string | null {
   return visible.reduce((top, current) => (current.zIndex > top.zIndex ? current : top)).id;
 }
 
-function createInitialBounds(
+function windowMaximizedKey(appId: string): string {
+  return `win10_window_maximized_v1:${appId}`;
+}
+
+function readWindowMaximized(appId: string): boolean {
+  try {
+    return typeof window !== 'undefined' && window.localStorage.getItem(windowMaximizedKey(appId)) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function createInitialWindowLayout(
   appId: string,
   existingCount: number,
   taskbarSettings: TaskbarSettings,
-): { bounds: WindowBounds; minWidth: number; minHeight: number } {
+): WindowBounds & Pick<AppWindow, 'minWidth' | 'minHeight' | 'isMaximized'> {
   const insets = getTaskbarInsets(taskbarSettings);
   const vw =
     typeof window !== 'undefined' ? window.innerWidth - insets.left - insets.right : 1280;
@@ -254,17 +268,18 @@ function createInitialBounds(
   const isChrome = appId === 'chrome';
   const isOffice = appId === 'word' || appId === 'excel';
   const isStudio = appId === 'code-studio';
-  const targetWidth = isCalc ? 340 : isOffice || isStudio ? 1120 : isChrome ? 1040 : isExplorer ? 940 : isSettings ? 840 : DEFAULT_WIDTH;
-  const targetHeight = isCalc ? 540 : isOffice || isStudio ? 700 : isChrome ? 680 : isExplorer ? 600 : isSettings ? 580 : DEFAULT_HEIGHT;
+  const isPdfTool = appId === 'pdf-tool';
+  const targetWidth = isCalc ? 340 : isOffice || isStudio || isPdfTool ? 1120 : isChrome ? 1040 : isExplorer ? 940 : isSettings ? 840 : DEFAULT_WIDTH;
+  const targetHeight = isCalc ? 540 : isOffice || isStudio || isPdfTool ? 700 : isChrome ? 680 : isExplorer ? 600 : isSettings ? 580 : DEFAULT_HEIGHT;
   const minWidth = isCalc ? 320 : isOffice ? 680 : isChrome ? 520 : isExplorer ? 620 : isSettings ? 580 : 320;
-  const minHeight = isCalc ? 480 : isOffice ? 460 : isStudio || isChrome ? 380 : isExplorer ? 400 : isSettings ? 420 : 220;
+  const minHeight = isCalc ? 480 : isOffice ? 460 : isStudio || isChrome ? 380 : isPdfTool ? 360 : isExplorer ? 400 : isSettings ? 420 : 220;
 
   const width = Math.min(targetWidth, Math.max(minWidth, vw - 48));
   const height = Math.min(targetHeight, Math.max(minHeight, vh - 48));
   const offset = (existingCount % 6) * 28;
   const x = Math.max(16, Math.min(Math.round((vw - width) / 2) + offset, vw - width - 16));
   const y = Math.max(16, Math.min(Math.round((vh - height) / 2) + offset, vh - height - 16));
-  return { bounds: { x, y, width, height }, minWidth, minHeight };
+  return { x, y, width, height, minWidth, minHeight, isMaximized: readWindowMaximized(appId) };
 }
 
 export function findNextFreeSlot(
@@ -294,7 +309,7 @@ export function findNextFreeSlot(
   return { col: 0, row: 0 };
 }
 
-export const useDesktopStore = create<DesktopState>((set) => ({
+export const useDesktopStore = create<DesktopState>((set, get) => ({
   apps: DESKTOP_APPS,
   isHydrated: false,
   selectedIconIds: [],
@@ -306,6 +321,7 @@ export const useDesktopStore = create<DesktopState>((set) => ({
   isTaskViewOpen: false,
   isPeekingDesktop: false,
   explorerStartFolderId: 'this-pc',
+  explorerReveal: null,
   notepadActiveFileId: null,
   notepadOpenNonce: 0,
   officeActiveFileId: null,
@@ -498,7 +514,7 @@ export const useDesktopStore = create<DesktopState>((set) => ({
         };
       }
 
-      const { bounds, minWidth, minHeight } = createInitialBounds(
+      const layout = createInitialWindowLayout(
         'settings',
         state.windows.length,
         state.taskbarSettings,
@@ -511,12 +527,9 @@ export const useDesktopStore = create<DesktopState>((set) => ({
             id: 'settings',
             title: displayTitle,
             icon: app.icon,
-            ...bounds,
-            minWidth,
-            minHeight,
+            ...layout,
             zIndex: nextZ,
             isMinimized: false,
-            isMaximized: false,
           },
         ],
         activeAppId: 'settings',
@@ -673,7 +686,7 @@ export const useDesktopStore = create<DesktopState>((set) => ({
     });
   },
 
-  openApp: (id, explorerFolderId) =>
+  openApp: (id, explorerFolderId, revealFileId) =>
     set((state) => {
       const app = state.apps.find((item) => item.id === id);
       if (!app) return state;
@@ -683,6 +696,9 @@ export const useDesktopStore = create<DesktopState>((set) => ({
       const existing = state.windows.find((w) => w.id === id);
       const nextStartFolder =
         explorerFolderId ?? (!existing && id === 'explorer' ? 'this-pc' : state.explorerStartFolderId);
+      const explorerReveal = id === 'explorer'
+        ? explorerFolderId && revealFileId ? { folderId: explorerFolderId, fileId: revealFileId } : null
+        : state.explorerReveal;
 
       if (existing) {
         return {
@@ -694,10 +710,11 @@ export const useDesktopStore = create<DesktopState>((set) => ({
           contextMenuPos: null,
           isStartMenuOpen: false,
           explorerStartFolderId: nextStartFolder,
+          explorerReveal,
         };
       }
 
-      const { bounds, minWidth, minHeight } = createInitialBounds(
+      const layout = createInitialWindowLayout(
         app.id,
         state.windows.length,
         state.taskbarSettings,
@@ -706,12 +723,9 @@ export const useDesktopStore = create<DesktopState>((set) => ({
         id: app.id,
         title: displayTitle,
         icon: app.icon,
-        ...bounds,
-        minWidth,
-        minHeight,
+        ...layout,
         zIndex: nextZ,
         isMinimized: false,
-        isMaximized: false,
       };
 
       return {
@@ -721,6 +735,7 @@ export const useDesktopStore = create<DesktopState>((set) => ({
         contextMenuPos: null,
         isStartMenuOpen: false,
         explorerStartFolderId: nextStartFolder,
+        explorerReveal,
         notepadActiveFileId: id === 'notepad' ? null : state.notepadActiveFileId,
         officeActiveFileId: id === 'word' || id === 'excel' ? null : state.officeActiveFileId,
       };
@@ -748,7 +763,7 @@ export const useDesktopStore = create<DesktopState>((set) => ({
         };
       }
 
-      const { bounds, minWidth, minHeight } = createInitialBounds(
+      const layout = createInitialWindowLayout(
         appId,
         state.windows.length,
         state.taskbarSettings,
@@ -757,12 +772,9 @@ export const useDesktopStore = create<DesktopState>((set) => ({
         id: appId,
         title: app.name,
         icon: app.icon,
-        ...bounds,
-        minWidth,
-        minHeight,
+        ...layout,
         zIndex: nextZ,
         isMinimized: false,
-        isMaximized: false,
       };
 
       return {
@@ -798,7 +810,7 @@ export const useDesktopStore = create<DesktopState>((set) => ({
         };
       }
 
-      const { bounds, minWidth, minHeight } = createInitialBounds(
+      const layout = createInitialWindowLayout(
         'media-player',
         state.windows.length,
         state.taskbarSettings,
@@ -807,12 +819,9 @@ export const useDesktopStore = create<DesktopState>((set) => ({
         id: 'media-player',
         title: app.name,
         icon: app.icon,
-        ...bounds,
-        minWidth,
-        minHeight,
+        ...layout,
         zIndex: nextZ,
         isMinimized: false,
-        isMaximized: false,
       };
 
       return {
@@ -848,7 +857,7 @@ export const useDesktopStore = create<DesktopState>((set) => ({
         };
       }
 
-      const { bounds, minWidth, minHeight } = createInitialBounds(
+      const layout = createInitialWindowLayout(
         'notepad',
         state.windows.length,
         state.taskbarSettings,
@@ -857,12 +866,9 @@ export const useDesktopStore = create<DesktopState>((set) => ({
         id: 'notepad',
         title: 'Notepad',
         icon: app.icon,
-        ...bounds,
-        minWidth,
-        minHeight,
+        ...layout,
         zIndex: nextZ,
         isMinimized: false,
-        isMaximized: false,
       };
 
       return {
@@ -884,7 +890,7 @@ export const useDesktopStore = create<DesktopState>((set) => ({
         if (!app) return state;
         const displayTitle = state.shortcutLabels[app.id] ?? app.name;
         const nextZ = state.topZIndex + 1;
-        const boundsInfo = createInitialBounds(
+        const layout = createInitialWindowLayout(
           app.id,
           state.windows.length,
           state.taskbarSettings,
@@ -896,12 +902,9 @@ export const useDesktopStore = create<DesktopState>((set) => ({
               id: app.id,
               title: displayTitle,
               icon: app.icon,
-              ...boundsInfo.bounds,
-              minWidth: boundsInfo.minWidth,
-              minHeight: boundsInfo.minHeight,
+              ...layout,
               zIndex: nextZ,
               isMinimized: false,
-              isMaximized: false,
             },
           ],
           activeAppId: id,
@@ -973,11 +976,32 @@ export const useDesktopStore = create<DesktopState>((set) => ({
       };
     }),
 
+  snapActiveWindow: (side) => {
+    const { activeAppId, windows, taskbarSettings, updateWindowBounds } = get();
+    const active = windows.find((item) => item.id === activeAppId);
+    if (!active || active.isMinimized || typeof window === 'undefined') return false;
+
+    const insets = getTaskbarInsets(taskbarSettings);
+    const areaWidth = window.innerWidth - insets.left - insets.right;
+    const areaHeight = window.innerHeight - insets.top - insets.bottom;
+    if (areaWidth < 2 || areaHeight < 1) return false;
+
+    const half = Math.floor(areaWidth / 2);
+    updateWindowBounds(active.id, {
+      x: side === 'left' ? 0 : half,
+      y: 0,
+      width: side === 'left' ? half : areaWidth - half,
+      height: areaHeight,
+    }, true);
+    return true;
+  },
+
   closeWindow: (id) =>
     set((state) => {
       const updated = state.windows.filter((w) => w.id !== id);
       return {
         windows: updated,
+        ...(id === 'explorer' && { explorerReveal: null }),
         activeAppId:
           state.activeAppId === id ? getTopVisibleWindowId(updated) : state.activeAppId,
       };
@@ -1137,5 +1161,17 @@ export const useDesktopStore = create<DesktopState>((set) => ({
 }));
 
 if (typeof window !== 'undefined') {
+  useDesktopStore.subscribe((state, previous) => {
+    if (state.windows === previous.windows) return;
+    for (const current of state.windows) {
+      const prior = previous.windows.find((item) => item.id === current.id);
+      if (!prior || current.isMaximized === prior.isMaximized) continue;
+      try {
+        window.localStorage.setItem(windowMaximizedKey(current.id), String(current.isMaximized));
+      } catch {
+        // Keep window controls usable when browser storage is unavailable.
+      }
+    }
+  });
   void useDesktopStore.getState().hydrate();
 }

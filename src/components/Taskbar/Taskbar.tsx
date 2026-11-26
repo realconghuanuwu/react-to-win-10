@@ -9,10 +9,10 @@ import { getTaskbarThickness, useDesktopStore } from '../../store/useDesktopStor
 import { StartMenu } from './StartMenu';
 import { SystemTray } from './SystemTray';
 import { TaskbarContextMenu } from './TaskbarContextMenu';
+import { TaskbarSearch } from './TaskbarSearch';
 import { TaskViewOverlay } from './TaskViewOverlay';
 import {
   Win10CortanaIcon,
-  Win10SearchIcon,
   Win10StartLogo,
   Win10TaskViewIcon,
 } from './Win10Icons';
@@ -32,7 +32,6 @@ export function Taskbar() {
   const setTaskbarContextMenuPos = useDesktopStore((state) => state.setTaskbarContextMenuPos);
 
   const [isHovered, setIsHovered] = useState(false);
-  const [searchText, setSearchText] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
   const [addressText, setAddressText] = useState('This PC');
 
@@ -52,12 +51,6 @@ export function Taskbar() {
       .filter((a): a is NonNullable<typeof a> => Boolean(a));
   }, [apps, windows, settings.pinnedAppIds]);
 
-  const searchMatches = useMemo(() => {
-    const q = searchText.trim().toLowerCase();
-    if (!q) return [];
-    return apps.filter((a) => a.name.toLowerCase().includes(q)).slice(0, 6);
-  }, [apps, searchText]);
-
   const thickness = getTaskbarThickness(settings);
   const isVertical = settings.location === 'left' || settings.location === 'right';
   const tooltipPos =
@@ -75,7 +68,7 @@ export function Taskbar() {
     isStartMenuOpen ||
     isTaskViewOpen ||
     Boolean(taskbarContextMenuPos) ||
-    searchFocused;
+    (searchFocused && settings.searchMode !== 'hidden');
 
   const positionClass =
     settings.location === 'top'
@@ -137,7 +130,8 @@ export function Taskbar() {
         }}
         style={isVertical ? { width: thickness } : { height: thickness }}
         className={[
-          'fixed bg-[#101010]/88 backdrop-blur-xl flex items-center justify-between z-50 transition-transform duration-150',
+          'fixed bg-[#101010]/88 backdrop-blur-xl flex items-center justify-between z-50',
+          searchFocused ? 'transition-none' : 'transition-transform duration-150',
           positionClass,
           autoHideTransform,
         ].join(' ')}
@@ -167,67 +161,10 @@ export function Taskbar() {
           </Tooltip>
 
           {/* Search: Box or Icon */}
-          {settings.searchMode === 'box' && !isVertical ? (
-            <div className="relative h-full flex items-center py-[2px] pr-1">
-              <div className="flex items-center h-full w-[240px] bg-[#2a2a2a] hover:bg-[#333333] focus-within:bg-white focus-within:text-black border border-white/15 focus-within:border-[#0078d7] px-2.5 gap-2 transition-colors">
-                <Win10SearchIcon className="w-4 h-4 shrink-0 opacity-80" />
-                <input
-                  type="text"
-                  value={searchText}
-                  onFocus={() => setSearchFocused(true)}
-                  onBlur={() => window.setTimeout(() => setSearchFocused(false), 150)}
-                  onChange={(e) => setSearchText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && searchMatches.length > 0) {
-                      openApp(searchMatches[0].id);
-                      setSearchText('');
-                      setSearchFocused(false);
-                    }
-                  }}
-                  placeholder="Type here to search"
-                  aria-label="Type here to search"
-                  className="w-full bg-transparent text-[12px] outline-none placeholder:text-white/65 focus:placeholder:text-black/50"
-                />
-              </div>
-
-              {searchFocused && searchMatches.length > 0 && (
-                <div
-                  className={[
-                    'absolute left-0 w-[280px] bg-[#1f1f1f] border border-[#555555] shadow-xl py-1 z-[70]',
-                    settings.location === 'top' ? 'top-full mt-1' : 'bottom-full mb-1',
-                  ].join(' ')}
-                >
-                  {searchMatches.map((app) => (
-                    <button
-                      key={app.id}
-                      type="button"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        openApp(app.id);
-                        setSearchText('');
-                        setSearchFocused(false);
-                      }}
-                      className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[12.5px] text-white hover:bg-white/10 cursor-default text-left"
-                    >
-                      <img src={app.icon} alt="" className="w-4 h-4 object-contain" />
-                      <span>{app.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : settings.searchMode !== 'hidden' ? (
-            <Tooltip content="Type here to search" relationship="label" positioning={tooltipPos}>
-              <button
-                type="button"
-                data-start-trigger="true"
-                aria-label="Search"
-                onClick={toggleStartMenu}
-                className={`flex items-center justify-center shrink-0 text-white hover:bg-white/10 active:bg-white/15 transition-colors cursor-default ${startBtnSize}`}
-              >
-                <Win10SearchIcon />
-              </button>
-            </Tooltip>
+          {settings.searchMode !== 'hidden' ? (
+            <TaskbarSearch key={settings.searchMode === 'box' && !isVertical ? 'box' : 'icon'}
+              iconClass={settings.searchMode === 'box' && !isVertical ? undefined : startBtnSize}
+              placement={tooltipPos} onFocusChange={setSearchFocused} />
           ) : null}
 
           {/* Cortana Button */}
