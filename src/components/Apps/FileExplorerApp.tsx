@@ -6,6 +6,12 @@ import {
   useFileSystemStore,
   type FsNode,
 } from '../../store/useFileSystemStore';
+import {
+  ExplorerContextMenu,
+  type ExplorerSortField,
+  type ExplorerSortOrder,
+  type ExplorerViewMode,
+} from './ExplorerContextMenu';
 
 interface FileExplorerAppProps {
   windowId: string;
@@ -55,8 +61,13 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
   const [searchQuery, setSearchQuery] = useState('');
   const [foldersCollapsed, setFoldersCollapsed] = useState(false);
   const [drivesCollapsed, setDrivesCollapsed] = useState(false);
+  const [viewMode, setViewMode] = useState<ExplorerViewMode>('tiles');
+  const [sortField, setSortField] = useState<ExplorerSortField>('name');
+  const [sortOrder, setSortOrder] = useState<ExplorerSortOrder>('asc');
+  const [groupBy, setGroupBy] = useState<ExplorerSortField | 'none'>('none');
+  const [showPropertiesModal, setShowPropertiesModal] = useState(false);
   const [expandedTreeIds, setExpandedTreeIds] = useState<Set<string>>(
-    () => new Set(['quick-access', 'this-pc', 'drive-c']),
+    () => new Set(['quick-access', 'this-pc', 'drive-c', 'drive-d']),
   );
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 
@@ -164,11 +175,31 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
   }, [nodes]);
 
   const currentChildren = useMemo(() => {
-    const raw = childrenMap.get(currentFolderId) ?? [];
+    const raw = [...(childrenMap.get(currentFolderId) ?? [])];
     const query = searchQuery.trim().toLowerCase();
-    if (!query) return raw;
-    return raw.filter((item) => item.name.toLowerCase().includes(query));
-  }, [childrenMap, currentFolderId, searchQuery]);
+    const filtered = query
+      ? raw.filter((item) => item.name.toLowerCase().includes(query))
+      : raw;
+
+    filtered.sort((a, b) => {
+      if (a.kind !== b.kind) {
+        if (a.kind === 'drive') return 1;
+        if (b.kind === 'drive') return -1;
+      }
+      let cmp = 0;
+      if (sortField === 'date') {
+        cmp = a.modifiedAt - b.modifiedAt;
+      } else if (sortField === 'type') {
+        cmp = a.kind.localeCompare(b.kind);
+      } else if (sortField === 'size') {
+        cmp = (a.content?.length ?? 0) - (b.content?.length ?? 0);
+      } else {
+        cmp = a.name.localeCompare(b.name);
+      }
+      return sortOrder === 'asc' ? cmp : -cmp;
+    });
+    return filtered;
+  }, [childrenMap, currentFolderId, searchQuery, sortField, sortOrder]);
 
   const thisPcFolders = useMemo(
     () => currentChildren.filter((item) => item.kind === 'folder'),
@@ -257,8 +288,32 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
     });
   };
 
-  const usedPct = Math.min(100, (storageUsedBytes / storageQuotaBytes) * 100);
+  const driveCount = Math.max(1, thisPcDrives.length);
+  const perDriveQuotaBytes = Math.floor(storageQuotaBytes / driveCount);
+
+  const getDriveUsedBytes = (driveId: string): number => {
+    const visited: FsNode[] = [];
+    const stack = [driveId];
+    while (stack.length > 0) {
+      const id = stack.pop()!;
+      const node = nodes[id];
+      if (!node) continue;
+      visited.push(node);
+      for (const child of childrenMap.get(id) ?? []) {
+        stack.push(child.id);
+      }
+    }
+    const serialized = JSON.stringify(visited);
+    return typeof TextEncoder !== 'undefined'
+      ? new TextEncoder().encode(serialized).length
+      : serialized.length * 2;
+  };
+
   const freeBytes = Math.max(0, storageQuotaBytes - storageUsedBytes);
+  const currentDriveFreeBytes =
+    currentNode.kind === 'drive'
+      ? Math.max(0, perDriveQuotaBytes - getDriveUsedBytes(currentNode.id))
+      : freeBytes;
 
   const renderTreeNode = (nodeId: string, depth: number) => {
     const node = nodes[nodeId];
@@ -317,6 +372,36 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
   const renderFolderTile = (item: FsNode) => {
     const isSelected = selectedIds.includes(item.id);
     const isRenaming = renamingId === item.id;
+    const isVerticalIcon =
+      viewMode === 'extra-large' || viewMode === 'large' || viewMode === 'medium';
+    const isRowMode = viewMode === 'list' || viewMode === 'details' || viewMode === 'content';
+
+    const iconSizeClass =
+      viewMode === 'extra-large'
+        ? 'w-16 h-16'
+        : viewMode === 'large'
+          ? 'w-12 h-12'
+          : viewMode === 'medium'
+            ? 'w-10 h-10'
+            : viewMode === 'small' || viewMode === 'list' || viewMode === 'details'
+              ? 'w-4 h-4'
+              : 'w-10 h-10';
+
+    const containerLayoutClass = isVerticalIcon
+      ? viewMode === 'extra-large'
+        ? 'flex-col items-center w-[112px] p-2 text-center'
+        : viewMode === 'large'
+          ? 'flex-col items-center w-[92px] p-2 text-center'
+          : 'flex-col items-center w-[80px] p-1.5 text-center'
+      : viewMode === 'details'
+        ? 'grid grid-cols-[1fr_140px_110px] items-center w-full px-2.5 py-1 text-left'
+        : viewMode === 'list'
+          ? 'flex-row items-center w-[200px] px-2 py-1 text-left'
+          : viewMode === 'small'
+            ? 'flex-row items-center w-[160px] px-2 py-1 text-left'
+            : viewMode === 'content'
+              ? 'flex-row items-center justify-between w-full px-3 py-2 border-b border-[#252525] text-left'
+              : 'flex-row items-center gap-2.5 w-[205px] px-2.5 py-2 text-left';
 
     return (
       <div
@@ -339,39 +424,69 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
         }}
         onContextMenu={(e) => handlePaneContextMenu(e, item.id)}
         className={[
-          'flex items-center gap-2.5 w-[205px] px-2.5 py-2 border transition-colors cursor-default',
+          'flex border transition-colors cursor-default',
+          containerLayoutClass,
           isSelected
             ? 'bg-[#363636] border-[#666666]'
             : 'border-transparent hover:bg-[#2a2a2a]',
         ].join(' ')}
       >
-        <img
-          src={item.icon}
-          alt={item.name}
-          draggable={false}
-          className="w-10 h-10 object-contain shrink-0 pointer-events-none"
-        />
-        <div className="min-w-0 flex-1">
-          {isRenaming ? (
-            <input
-              ref={renameInputRef}
-              value={renameDraft}
-              onChange={(e) => setRenameDraft(e.target.value)}
-              onBlur={commitRename}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') commitRename();
-                if (e.key === 'Escape') setRenamingId(null);
-              }}
-              onClick={(e) => e.stopPropagation()}
-              className="w-full bg-[#191919] border border-[#0078d7] text-white text-[12px] px-1 py-0.5 outline-none"
-            />
-          ) : (
-            <div className="text-[12.5px] text-white truncate">{item.name}</div>
-          )}
-          <div className="text-[11px] text-[#999999]">
-            {item.kind === 'file' ? 'Text Document' : 'File folder'}
+        <div className={`flex items-center ${isVerticalIcon ? 'flex-col' : 'gap-2'} min-w-0 flex-1`}>
+          <img
+            src={item.icon}
+            alt={item.name}
+            draggable={false}
+            className={`${iconSizeClass} object-contain shrink-0 pointer-events-none ${
+              isVerticalIcon ? 'mb-1.5' : ''
+            }`}
+          />
+          <div className="min-w-0 flex-1 w-full">
+            {isRenaming ? (
+              <input
+                ref={renameInputRef}
+                value={renameDraft}
+                onChange={(e) => setRenameDraft(e.target.value)}
+                onBlur={commitRename}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitRename();
+                  if (e.key === 'Escape') setRenamingId(null);
+                }}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full bg-[#191919] border border-[#0078d7] text-white text-[12px] px-1 py-0.5 outline-none"
+              />
+            ) : (
+              <div
+                className={`text-[12.5px] text-white ${
+                  isVerticalIcon ? 'line-clamp-2 break-words' : 'truncate'
+                }`}
+              >
+                {item.name}
+              </div>
+            )}
+            {viewMode === 'tiles' && (
+              <div className="text-[11px] text-[#999999]">
+                {item.kind === 'file' ? 'Text Document' : 'File folder'}
+              </div>
+            )}
           </div>
         </div>
+
+        {viewMode === 'details' && (
+          <>
+            <span className="text-[11.5px] text-[#999999] truncate">
+              {new Date(item.modifiedAt).toLocaleDateString()}
+            </span>
+            <span className="text-[11.5px] text-[#999999] truncate">
+              {item.kind === 'file' ? 'Text Document' : 'File folder'}
+            </span>
+          </>
+        )}
+
+        {viewMode === 'content' && !isRowMode ? null : viewMode === 'content' && (
+          <div className="text-[11px] text-[#999999] shrink-0">
+            Date modified: {new Date(item.modifiedAt).toLocaleDateString()}
+          </div>
+        )}
       </div>
     );
   };
@@ -489,6 +604,18 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
             >
               <img src="/assets/icons/drive-os.png" alt="" className="w-4 h-4 object-contain" />
               <span>Local Disk (C:)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                navigateTo('drive-d');
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-1 text-[12px] border border-transparent hover:bg-[#333333] hover:border-[#4d4d4d] cursor-default"
+            >
+              <img src="/assets/icons/explorer/disk-sm.png" alt="" className="w-4 h-4 object-contain" />
+              <span>Local Disk (D:)</span>
             </button>
           </>
         )}
@@ -701,11 +828,14 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
                   <div className="flex flex-wrap gap-3">
                     {thisPcDrives.map((drive) => {
                       const isSelected = selectedIds.includes(drive.id);
+                      const driveUsedBytes = getDriveUsedBytes(drive.id);
+                      const driveFreeBytes = Math.max(0, perDriveQuotaBytes - driveUsedBytes);
+                      const driveUsedPct = Math.min(100, (driveUsedBytes / Math.max(1, perDriveQuotaBytes)) * 100);
                       return (
                         <button
                           key={drive.id}
                           type="button"
-                          data-testid="drive-card-c"
+                          data-testid={drive.id === 'drive-c' ? 'drive-card-c' : `drive-card-${drive.id}`}
                           onClick={(e) => {
                             e.stopPropagation();
                             setSelectedIds([drive.id]);
@@ -731,9 +861,9 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
                             <div className="text-[12.5px] text-white truncate">{drive.name}</div>
                             <div className="w-full h-[14px] bg-[#3b3b3b] border border-[#555555] my-1 overflow-hidden">
                               <div
-                                style={{ width: `${Math.max(2, usedPct)}%` }}
+                                style={{ width: `${Math.max(2, driveUsedPct)}%` }}
                                 className={`h-full transition-all duration-300 ${
-                                  usedPct >= 90 ? 'bg-[#da2626]' : 'bg-[#26a0da]'
+                                  driveUsedPct >= 90 ? 'bg-[#da2626]' : 'bg-[#26a0da]'
                                 }`}
                               />
                             </div>
@@ -741,7 +871,7 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
                               data-testid="drive-storage-caption"
                               className="text-[11px] text-[#b0b0b0] truncate"
                             >
-                              {formatStorageBytes(freeBytes)} free of {formatStorageBytes(storageQuotaBytes)}
+                              {formatStorageBytes(driveFreeBytes)} free of {formatStorageBytes(perDriveQuotaBytes)}
                             </div>
                           </div>
                         </button>
@@ -752,27 +882,28 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
               </div>
             </div>
           ) : currentChildren.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-[13px] text-[#888888] gap-2">
+            <div className="flex flex-col items-center justify-center h-full text-[13px] text-[#888888]">
               <span>
                 {currentFolderId === 'recycle-bin'
                   ? 'Recycle Bin is empty.'
                   : 'This folder is empty.'}
               </span>
-              {canCreateFolder && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleCreateNewFolder();
-                  }}
-                  className="px-3 py-1 bg-[#2b2b2b] border border-[#4a4a4a] hover:bg-[#3a3a3a] text-[12px] text-white cursor-default"
-                >
-                  New folder
-                </button>
-              )}
             </div>
           ) : (
-            <div className="flex flex-wrap gap-2 content-start">
+            <div
+              className={
+                viewMode === 'details' || viewMode === 'content'
+                  ? 'flex flex-col gap-0.5'
+                  : 'flex flex-wrap gap-2 content-start'
+              }
+            >
+              {viewMode === 'details' && (
+                <div className="grid grid-cols-[1fr_140px_110px] px-2.5 py-1 text-[11.5px] text-[#aaaaaa] border-b border-[#2d2d2d] mb-1">
+                  <span>Name</span>
+                  <span>Date modified</span>
+                  <span>Type</span>
+                </div>
+              )}
               {currentChildren.map(renderFolderTile)}
             </div>
           )}
@@ -798,103 +929,104 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
 
       {/* Explorer Context Menu */}
       {contextMenu && (
+        <ExplorerContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          containerWidth={rootRef.current?.clientWidth ?? 940}
+          containerHeight={rootRef.current?.clientHeight ?? 568}
+          currentFolderId={currentFolderId}
+          canCreate={canCreateFolder}
+          targetNode={contextMenu.targetNodeId ? nodes[contextMenu.targetNodeId] ?? null : null}
+          viewMode={viewMode}
+          sortField={sortField}
+          sortOrder={sortOrder}
+          groupBy={groupBy}
+          onChangeViewMode={setViewMode}
+          onExpandAllGroups={() => {
+            setFoldersCollapsed(false);
+            setDrivesCollapsed(false);
+          }}
+          onCollapseAllGroups={() => {
+            setFoldersCollapsed(true);
+            setDrivesCollapsed(true);
+          }}
+          onChangeSortField={setSortField}
+          onChangeSortOrder={setSortOrder}
+          onChangeGroupBy={setGroupBy}
+          onRefresh={() => {
+            void refreshStorageStats();
+          }}
+          onCreateFolder={handleCreateNewFolder}
+          onCreateTextFile={handleCreateNewTextFile}
+          onOpenNode={handleOpenNode}
+          onRenameNode={(nodeId) => handleStartRename(nodeId)}
+          onDeleteNode={(nodeId) => {
+            deleteNodes([nodeId]);
+            setSelectedIds([]);
+          }}
+          onRestoreNode={(nodeId) => {
+            restoreNodes([nodeId]);
+            setSelectedIds([]);
+          }}
+          onShowProperties={() => setShowPropertiesModal(true)}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
+
+      {/* Properties Dialog */}
+      {showPropertiesModal && (
         <div
-          role="menu"
-          onPointerDown={(e) => e.stopPropagation()}
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-          className="absolute z-40 w-[180px] bg-[#2b2b2b] border border-[#767676] shadow-xl py-1 text-[12px] text-white"
+          onClick={(e) => e.stopPropagation()}
+          className="absolute inset-0 z-50 flex items-center justify-center bg-black/35"
         >
-          {contextMenu.targetNodeId ? (
-            <>
-              {currentFolderId !== 'recycle-bin' && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const target = nodes[contextMenu.targetNodeId!];
-                    if (target) handleOpenNode(target);
-                    setContextMenu(null);
-                  }}
-                  className="w-full text-left px-3 py-1 hover:bg-[#414141] cursor-default"
-                >
-                  Open
-                </button>
-              )}
-              {currentFolderId === 'recycle-bin' ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    restoreNodes([contextMenu.targetNodeId!]);
-                    setContextMenu(null);
-                  }}
-                  className="w-full text-left px-3 py-1 hover:bg-[#414141] cursor-default"
-                >
-                  Restore
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  disabled={Boolean(nodes[contextMenu.targetNodeId]?.isSystem)}
-                  onClick={() => {
-                    handleStartRename(contextMenu.targetNodeId!);
-                    setContextMenu(null);
-                  }}
-                  className="w-full text-left px-3 py-1 enabled:hover:bg-[#414141] disabled:text-[#777777] cursor-default"
-                >
-                  Rename
-                </button>
-              )}
+          <div className="w-[300px] bg-[#242424] border border-[#555555] shadow-2xl text-[12px] text-white">
+            <div className="flex items-center justify-between px-3 py-2 bg-[#1f1f1f] border-b border-[#3a3a3a]">
+              <span className="truncate">{currentNode.name} Properties</span>
               <button
                 type="button"
-                disabled={Boolean(nodes[contextMenu.targetNodeId]?.isSystem)}
-                onClick={() => {
-                  deleteNodes([contextMenu.targetNodeId!]);
-                  setSelectedIds([]);
-                  setContextMenu(null);
-                }}
-                className="w-full text-left px-3 py-1 enabled:hover:bg-[#414141] disabled:text-[#777777] cursor-default"
+                onClick={() => setShowPropertiesModal(false)}
+                className="px-1.5 hover:bg-[#e81123] cursor-default"
               >
-                {currentFolderId === 'recycle-bin' ? 'Delete permanently' : 'Delete'}
+                ×
               </button>
-            </>
-          ) : (
-            <>
+            </div>
+            <div className="p-4 space-y-2.5">
+              <div className="flex items-center gap-3 pb-2 border-b border-[#383838]">
+                <img src={currentNode.icon} alt="" className="w-9 h-9 object-contain" />
+                <div>
+                  <div className="font-medium text-white">{currentNode.name}</div>
+                  <div className="text-[#aaaaaa] capitalize">{currentNode.kind}</div>
+                </div>
+              </div>
+              <div className="flex justify-between text-[#cccccc]">
+                <span>Contains:</span>
+                <span>{currentChildren.length} items</span>
+              </div>
+              <div className="flex justify-between text-[#cccccc]">
+                <span>Storage used:</span>
+                <span>
+                  {formatStorageBytes(
+                    currentNode.kind === 'drive'
+                      ? getDriveUsedBytes(currentNode.id)
+                      : storageUsedBytes,
+                  )}
+                </span>
+              </div>
+              <div className="flex justify-between text-[#cccccc]">
+                <span>Free space:</span>
+                <span>{formatStorageBytes(currentDriveFreeBytes)}</span>
+              </div>
+            </div>
+            <div className="flex justify-end px-4 py-2.5 bg-[#1f1f1f] border-t border-[#3a3a3a]">
               <button
                 type="button"
-                disabled={!canCreateFolder}
-                onClick={() => {
-                  handleCreateNewFolder();
-                  setContextMenu(null);
-                }}
-                className="w-full flex items-center gap-2 text-left px-3 py-1 enabled:hover:bg-[#414141] disabled:text-[#777777] cursor-default"
+                onClick={() => setShowPropertiesModal(false)}
+                className="px-4 py-1 bg-[#333333] hover:bg-[#444444] border border-[#555555] cursor-default"
               >
-                <img src="/assets/icons/folder-win10.png" alt="" className="w-3.5 h-3.5 object-contain" />
-                <span>New folder</span>
+                OK
               </button>
-              <button
-                type="button"
-                disabled={!canCreateFolder}
-                onClick={() => {
-                  handleCreateNewTextFile();
-                  setContextMenu(null);
-                }}
-                className="w-full flex items-center gap-2 text-left px-3 py-1 enabled:hover:bg-[#414141] disabled:text-[#777777] cursor-default"
-              >
-                <img src="/assets/icons/txt-file.svg" alt="" className="w-3.5 h-3.5 object-contain" />
-                <span>New Text Document</span>
-              </button>
-              <div className="h-px bg-[#4d4d4d] my-1 mx-2" />
-              <button
-                type="button"
-                onClick={() => {
-                  refreshStorageStats();
-                  setContextMenu(null);
-                }}
-                className="w-full text-left px-3 py-1 hover:bg-[#414141] cursor-default"
-              >
-                Refresh
-              </button>
-            </>
-          )}
+            </div>
+          </div>
         </div>
       )}
     </div>

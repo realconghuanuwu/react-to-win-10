@@ -135,6 +135,16 @@ const DEFAULT_NODES: Record<string, FsNode> = {
     createdAt: NOW,
     modifiedAt: NOW,
   },
+  'drive-d': {
+    id: 'drive-d',
+    parentId: 'this-pc',
+    name: 'Local Disk (D:)',
+    kind: 'drive',
+    icon: '/assets/icons/explorer/disk-sm.png',
+    isSystem: true,
+    createdAt: NOW,
+    modifiedAt: NOW,
+  },
   'recycle-bin': {
     id: 'recycle-bin',
     parentId: null,

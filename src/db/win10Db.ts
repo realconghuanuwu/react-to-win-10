@@ -62,7 +62,9 @@ function enqueueWrite(task: () => Promise<void>): Promise<void> {
 }
 
 function hasValidCoreNodes(nodes: Record<string, FsNode>): boolean {
-  return Boolean(nodes['this-pc'] && nodes['drive-c'] && nodes['recycle-bin']);
+  return Boolean(
+    nodes['this-pc'] && nodes['drive-c'] && nodes['drive-d'] && nodes['recycle-bin'],
+  );
 }
 
 function readLegacyLocalStorageFs(): Record<string, FsNode> | null {
