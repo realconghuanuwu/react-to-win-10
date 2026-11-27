@@ -1,6 +1,9 @@
 import { create } from 'zustand';
+import { playSound, type Win10SoundId } from '../utils/soundManager';
 
-export type NotificationTarget = { appId: string } | { fileId: string; folderId: string };
+export type NotificationTarget =
+  | { appId: string }
+  | { folderId: string; fileId?: string };
 
 export interface NotificationInput {
   source: string;
@@ -8,6 +11,8 @@ export interface NotificationInput {
   message: string;
   kind: 'success' | 'error';
   target?: NotificationTarget;
+  /** Custom sound to play for this notification, or false to suppress sound */
+  sound?: Win10SoundId | false;
 }
 
 export interface DesktopNotification extends NotificationInput {
@@ -42,6 +47,10 @@ export const useNotificationStore = create<NotificationState>((set) => ({
       items: [entry, ...state.items].slice(0, 50),
       toasts: [entry, ...state.toasts].slice(0, 3),
     }));
+    if (input.sound !== false) {
+      const soundId: Win10SoundId = input.sound ?? (input.kind === 'error' ? 'error' : 'notify');
+      playSound(soundId, { isNotification: true });
+    }
   },
   markRead: () =>
     set((state) => ({

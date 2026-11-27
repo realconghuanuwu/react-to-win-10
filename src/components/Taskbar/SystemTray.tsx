@@ -6,6 +6,7 @@ import {
   Tooltip,
 } from '@fluentui/react-components';
 import { useDesktopStore } from '../../store/useDesktopStore';
+import { playSound, playVolumeChangeChime } from '../../utils/soundManager';
 import { ActionCenter } from './ActionCenter';
 import {
   Win10ChevronUpIcon,
@@ -94,6 +95,8 @@ export function SystemTray() {
   const activeDesktopId = useDesktopStore((state) => state.activeDesktopId);
   const systemVolume = useDesktopStore((state) => state.systemVolume);
   const isSystemMuted = useDesktopStore((state) => state.isSystemMuted);
+  const usbConnected = useDesktopStore((state) => state.usbConnected);
+  const usbDeviceName = useDesktopStore((state) => state.usbDeviceName);
   const appVolumes = useDesktopStore((state) => state.appVolumes);
   const wifiEnabled = useDesktopStore((state) => state.wifiEnabled);
   const airplaneMode = useDesktopStore((state) => state.airplaneMode);
@@ -101,6 +104,8 @@ export function SystemTray() {
   const calendarEvents = useDesktopStore((state) => state.calendarEvents);
   const setSystemVolume = useDesktopStore((state) => state.setSystemVolume);
   const toggleSystemMute = useDesktopStore((state) => state.toggleSystemMute);
+  const connectUsbDrive = useDesktopStore((state) => state.connectUsbDrive);
+  const ejectUsbDrive = useDesktopStore((state) => state.ejectUsbDrive);
   const setAppVolume = useDesktopStore((state) => state.setAppVolume);
   const toggleQuickSetting = useDesktopStore((state) => state.toggleQuickSetting);
   const setNetworkName = useDesktopStore((state) => state.setNetworkName);
@@ -109,6 +114,7 @@ export function SystemTray() {
   const toggleShowDesktop = useDesktopStore((state) => state.toggleShowDesktop);
   const setPeekingDesktop = useDesktopStore((state) => state.setPeekingDesktop);
   const openApp = useDesktopStore((state) => state.openApp);
+  const openSettingsTab = useDesktopStore((state) => state.openSettingsTab);
 
   const audioDevices = [
     'Speakers (Realtek(R) Audio)',
@@ -340,7 +346,7 @@ export function SystemTray() {
             <Win10ChevronUpIcon className="text-white/90" />
           </button>
         </PopoverTrigger>
-        <PopoverSurface className="!bg-[#1f1f1f]/95 !border !border-[#404040] !rounded-none !p-2 !text-white !w-[160px]">
+        <PopoverSurface className="!bg-[#1f1f1f]/95 !border !border-[#404040] !rounded-none !p-2 !text-white !w-[196px]">
           <div className="grid grid-cols-3 gap-1">
             <button
               type="button"
@@ -366,9 +372,73 @@ export function SystemTray() {
             >
               📊
             </button>
+            <button
+              type="button"
+              title={usbConnected ? `Eject ${usbDeviceName} (E:)` : 'Plug in Virtual USB Drive (E:)'}
+              onClick={() => {
+                if (usbConnected) ejectUsbDrive();
+                else connectUsbDrive();
+              }}
+              className={`h-9 flex items-center justify-center hover:bg-white/10 cursor-default text-[14px] ${
+                usbConnected ? 'text-[#60cdff]' : 'text-white/85'
+              }`}
+            >
+              🔌
+            </button>
+            <button
+              type="button"
+              title="Sound & System Audio Settings"
+              onClick={() => openSettingsTab('Sound')}
+              className="h-9 flex items-center justify-center hover:bg-white/10 cursor-default text-[14px]"
+            >
+              🔊
+            </button>
           </div>
         </PopoverSurface>
       </Popover>
+
+      {/* Safely Remove Hardware (shown when USB drive is connected) */}
+      {usbConnected && (
+        <Popover positioning={popoverPos}>
+          <PopoverTrigger disableButtonEnhancement>
+            <button
+              type="button"
+              aria-label="Safely Remove Hardware and Eject Media"
+              title={`Safely Remove Hardware and Eject Media (${usbDeviceName})`}
+              className={`flex items-center justify-center ${isVertical ? btnSizeClass : 'w-7 h-full'} hover:bg-white/12 transition-colors cursor-default`}
+            >
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.25" aria-hidden="true" className="text-white/95">
+                <path d="M8 2.5v9M8 2.5L6 4.5M8 2.5l2 2" strokeLinecap="round" strokeLinejoin="round" />
+                <circle cx="5" cy="9" r="1.1" fill="currentColor" stroke="none" />
+                <path d="M5 9c0 1.4 1.2 1.8 3 1.8" />
+                <rect x="10.2" y="6.8" width="2" height="2" fill="currentColor" stroke="none" />
+                <path d="M11.2 8.8c0 1.3-1.2 1.8-3.2 1.8" />
+                <circle cx="8" cy="12.6" r="1.4" fill="currentColor" stroke="none" />
+              </svg>
+            </button>
+          </PopoverTrigger>
+          <PopoverSurface className="!bg-[#1f1f1f]/95 !backdrop-blur-xl !border !border-[#3d3d3d] !rounded-none !p-1.5 !w-[248px] !text-white !shadow-[0_8px_28px_rgba(0,0,0,0.45)]">
+            <div className="px-2.5 py-1.5 text-[11.5px] text-white/65 border-b border-white/10">
+              Safely Remove Hardware and Eject Media
+            </div>
+            <button
+              type="button"
+              onClick={() => ejectUsbDrive()}
+              className="w-full text-left px-2.5 py-2 mt-1 hover:bg-[#0078d7] text-[12.5px] cursor-default flex flex-col"
+            >
+              <span className="font-medium">Eject {usbDeviceName}</span>
+              <span className="text-[11px] text-white/75">USB Drive (E:)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => openApp('explorer', 'drive-e')}
+              className="w-full text-left px-2.5 py-1.5 hover:bg-white/10 text-[12px] text-white/85 cursor-default"
+            >
+              Open USB Drive (E:) in Explorer
+            </button>
+          </PopoverSurface>
+        </Popover>
+      )}
 
       {/* Network Flyout */}
       {settings.systemIcons.network && (
@@ -452,6 +522,7 @@ export function SystemTray() {
                 e.preventDefault();
                 const delta = e.deltaY < 0 ? 4 : -4;
                 setSystemVolume(systemVolume + delta);
+                playVolumeChangeChime();
               }}
               title={
                 isSystemMuted || systemVolume === 0
@@ -490,6 +561,7 @@ export function SystemTray() {
                       onClick={() => {
                         setAudioDeviceIndex(idx);
                         setShowAudioDevices(false);
+                        playSound(idx === 1 ? 'usb-insert' : 'background');
                       }}
                       className={[
                         'w-full text-left px-4 py-2 text-[13px] hover:bg-white/10 transition-colors cursor-default flex items-center justify-between',
@@ -534,7 +606,11 @@ export function SystemTray() {
                     max={100}
                     value={effectiveVolume}
                     aria-label="Master volume"
-                    onChange={(e) => setSystemVolume(Number(e.target.value))}
+                    onChange={(e) => {
+                      setSystemVolume(Number(e.target.value));
+                      playVolumeChangeChime();
+                    }}
+                    onPointerUp={() => playSound('background')}
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                   />
                   <div
@@ -550,37 +626,58 @@ export function SystemTray() {
 
               {/* Volume Mixer toggle */}
               <div className="border-t border-white/10 px-4 py-2 bg-[#181818]">
-                <button
-                  type="button"
-                  onClick={() => setShowMixer((v) => !v)}
-                  className="text-[11.5px] text-[#9bd2ff] hover:underline cursor-default"
-                >
-                  {showMixer ? 'Hide Volume Mixer' : 'Open Volume Mixer'}
-                </button>
+                <div className="flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setShowMixer((v) => !v)}
+                    className="text-[11.5px] text-[#9bd2ff] hover:underline cursor-default"
+                  >
+                    {showMixer ? 'Hide Volume Mixer' : 'Open Volume Mixer'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openSettingsTab('Sound')}
+                    className="text-[11.5px] text-white/75 hover:text-white hover:underline cursor-default"
+                  >
+                    Sound settings
+                  </button>
+                </div>
                 {showMixer && (
-                  <div className="mt-2 space-y-2 max-h-[140px] overflow-y-auto">
-                    {activeWindows.length === 0 ? (
-                      <div className="text-[11px] text-white/55">No running apps</div>
-                    ) : (
-                      activeWindows.map((win) => {
-                        const val = appVolumes[win.appId ?? win.id] ?? 100;
-                        return (
-                          <div key={win.id} className="flex items-center gap-2 text-[11px]">
-                            <img src={win.icon} alt="" className="w-3.5 h-3.5 object-contain shrink-0" />
-                            <span className="w-24 truncate text-white/85">{win.title}</span>
-                            <input
-                              type="range"
-                              min={0}
-                              max={100}
-                              value={val}
-                              onChange={(e) => setAppVolume(win.appId ?? win.id, Number(e.target.value))}
-                              className="flex-1 accent-[#0078d7]"
-                            />
-                            <span className="w-7 text-right tabular-nums text-white/75">{val}%</span>
-                          </div>
-                        );
-                      })
-                    )}
+                  <div className="mt-2 space-y-2 max-h-[160px] overflow-y-auto">
+                    <div className="flex items-center gap-2 text-[11px]">
+                      <span className="w-3.5 text-center shrink-0">🔔</span>
+                      <span className="w-24 truncate text-white/85">System Sounds</span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={appVolumes['system-sounds'] ?? 100}
+                        onChange={(e) => setAppVolume('system-sounds', Number(e.target.value))}
+                        onPointerUp={() => playSound('background')}
+                        className="flex-1 accent-[#0078d7]"
+                      />
+                      <span className="w-7 text-right tabular-nums text-white/75">
+                        {appVolumes['system-sounds'] ?? 100}%
+                      </span>
+                    </div>
+                    {activeWindows.map((win) => {
+                      const val = appVolumes[win.appId ?? win.id] ?? 100;
+                      return (
+                        <div key={win.id} className="flex items-center gap-2 text-[11px]">
+                          <img src={win.icon} alt="" className="w-3.5 h-3.5 object-contain shrink-0" />
+                          <span className="w-24 truncate text-white/85">{win.title}</span>
+                          <input
+                            type="range"
+                            min={0}
+                            max={100}
+                            value={val}
+                            onChange={(e) => setAppVolume(win.appId ?? win.id, Number(e.target.value))}
+                            className="flex-1 accent-[#0078d7]"
+                          />
+                          <span className="w-7 text-right tabular-nums text-white/75">{val}%</span>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>

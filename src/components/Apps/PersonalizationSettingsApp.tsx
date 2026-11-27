@@ -5,7 +5,14 @@ import {
   type PersonalizationTab,
 } from '../../store/useDesktopStore';
 import { formatStorageBytes, useFileSystemStore } from '../../store/useFileSystemStore';
+import { notify } from '../../store/useNotificationStore';
 import type { BackgroundFit, BackgroundType } from '../../db/types';
+import {
+  WIN10_SOUNDS,
+  playSound,
+  playVolumeChangeChime,
+  type Win10SoundCategory,
+} from '../../utils/soundManager';
 import { TaskbarSettingsPanel } from './TaskbarSettingsApp';
 
 const BUILT_IN_WALLPAPERS = [
@@ -47,6 +54,7 @@ const NAV_GROUPS: Array<{ title: string; items: Array<{ id: PersonalizationTab; 
     title: 'System & Device',
     items: [
       { id: 'Display', label: 'Display' },
+      { id: 'Sound', label: 'Sound' },
       { id: 'Network', label: 'Network & Internet' },
       { id: 'Apps', label: 'Apps' },
       { id: 'Accounts', label: 'Accounts' },
@@ -63,6 +71,7 @@ const HOME_CATEGORIES: Array<{
   glyph: string;
 }> = [
   { tab: 'Display', title: 'System', desc: 'Display, brightness, night light, storage', glyph: '🖥' },
+  { tab: 'Sound', title: 'Sound', desc: 'Volume, Windows 10 sound effects, USB', glyph: '🔊' },
   { tab: 'Network', title: 'Network & Internet', desc: 'Wi-Fi, airplane mode, VPN', glyph: '🌐' },
   { tab: 'Background', title: 'Personalization', desc: 'Background, lock screen, colors, Start', glyph: '🎨' },
   { tab: 'Apps', title: 'Apps', desc: 'Installed apps, defaults, features', glyph: '⊞' },
@@ -200,6 +209,13 @@ export function PersonalizationSettingsApp() {
   const networkName = useDesktopStore((state) => state.networkName);
   const brightness = useDesktopStore((state) => state.brightness);
   const displayScale = useDesktopStore((state) => state.displayScale);
+  const systemVolume = useDesktopStore((state) => state.systemVolume);
+  const isSystemMuted = useDesktopStore((state) => state.isSystemMuted);
+  const appVolumes = useDesktopStore((state) => state.appVolumes);
+  const soundEffectsEnabled = useDesktopStore((state) => state.soundEffectsEnabled);
+  const windowSoundsEnabled = useDesktopStore((state) => state.windowSoundsEnabled);
+  const usbConnected = useDesktopStore((state) => state.usbConnected);
+  const usbDeviceName = useDesktopStore((state) => state.usbDeviceName);
   const startMenuSettings = useDesktopStore((state) => state.startMenuSettings);
   const userName = useDesktopStore((state) => state.userName);
   const lockPin = useDesktopStore((state) => state.lockPin);
@@ -208,6 +224,13 @@ export function PersonalizationSettingsApp() {
   const setNetworkName = useDesktopStore((state) => state.setNetworkName);
   const setBrightness = useDesktopStore((state) => state.setBrightness);
   const setDisplayScale = useDesktopStore((state) => state.setDisplayScale);
+  const setSystemVolume = useDesktopStore((state) => state.setSystemVolume);
+  const toggleSystemMute = useDesktopStore((state) => state.toggleSystemMute);
+  const setAppVolume = useDesktopStore((state) => state.setAppVolume);
+  const setSoundEffectsEnabled = useDesktopStore((state) => state.setSoundEffectsEnabled);
+  const setWindowSoundsEnabled = useDesktopStore((state) => state.setWindowSoundsEnabled);
+  const connectUsbDrive = useDesktopStore((state) => state.connectUsbDrive);
+  const ejectUsbDrive = useDesktopStore((state) => state.ejectUsbDrive);
   const updateStartMenuSettings = useDesktopStore((state) => state.updateStartMenuSettings);
   const setUserName = useDesktopStore((state) => state.setUserName);
   const setLockPin = useDesktopStore((state) => state.setLockPin);
@@ -226,6 +249,7 @@ export function PersonalizationSettingsApp() {
   const [nameInput, setNameInput] = useState(userName);
   const [accountSavedMsg, setAccountSavedMsg] = useState('');
   const [appFilter, setAppFilter] = useState('');
+  const [soundCategory, setSoundCategory] = useState<Win10SoundCategory | 'all'>('all');
   const [updateStatus, setUpdateStatus] = useState<"You're up to date" | 'Checking for updates...' | 'All definitions current'>("You're up to date");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -696,6 +720,214 @@ export function PersonalizationSettingsApp() {
               </div>
               <div className="text-[13px] text-white/70">
                 Display resolution: {typeof window !== 'undefined' ? `${window.innerWidth} × ${window.innerHeight}` : '1280 × 720'}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'Sound' && (
+          <div className="space-y-5 max-w-[640px]">
+            <h1 className="text-[28px] font-light text-white tracking-tight">Sound</h1>
+
+            {/* Master Volume & System Sounds Volume */}
+            <div className="p-4 bg-[#181818] border border-white/10 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[14px] font-medium">Master volume</div>
+                  <div className="text-[12px] text-white/60">
+                    Controls system sound effects, media, and browser audio
+                  </div>
+                </div>
+                <span className="text-[14px] tabular-nums text-white/85">
+                  {isSystemMuted ? 'Muted' : `${systemVolume}%`}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={toggleSystemMute}
+                  className="px-3 py-1 bg-[#2b2b2b] hover:bg-[#383838] border border-white/15 text-[12px] cursor-default shrink-0"
+                >
+                  {isSystemMuted ? 'Unmute' : 'Mute'}
+                </button>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={isSystemMuted ? 0 : systemVolume}
+                  aria-label="Master volume"
+                  onChange={(e) => {
+                    setSystemVolume(Number(e.target.value));
+                    playVolumeChangeChime();
+                  }}
+                  onPointerUp={() => playSound('background')}
+                  style={{ accentColor: personalization.accentColor }}
+                  className="flex-1 cursor-pointer"
+                />
+              </div>
+
+              <div className="pt-2 border-t border-white/10 space-y-2">
+                <div className="flex items-center justify-between text-[13px]">
+                  <span>System Sounds volume</span>
+                  <span className="tabular-nums text-white/75">
+                    {appVolumes['system-sounds'] ?? 100}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={appVolumes['system-sounds'] ?? 100}
+                  aria-label="System Sounds volume"
+                  onChange={(e) => setAppVolume('system-sounds', Number(e.target.value))}
+                  onPointerUp={() => playSound('background')}
+                  style={{ accentColor: personalization.accentColor }}
+                  className="w-full cursor-pointer"
+                />
+              </div>
+
+              <div className="pt-2 border-t border-white/10">
+                <SettingsSwitch
+                  label="Play Windows 10 system sound effects"
+                  checked={soundEffectsEnabled}
+                  accentColor={personalization.accentColor}
+                  onChange={() => {
+                    const next = !soundEffectsEnabled;
+                    setSoundEffectsEnabled(next);
+                    if (next) playSound('notify', { force: true });
+                  }}
+                />
+                <SettingsSwitch
+                  label="Play window minimize / restore sounds"
+                  checked={windowSoundsEnabled}
+                  accentColor={personalization.accentColor}
+                  onChange={() => {
+                    const next = !windowSoundsEnabled;
+                    setWindowSoundsEnabled(next);
+                    if (next) playSound('restore', { force: true });
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* USB & Event Triggers */}
+            <div className="p-4 bg-[#181818] border border-white/10 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-[14px] font-medium">Hardware &amp; Event Simulation</div>
+                  <div className="text-[12px] text-white/60">
+                    Test USB plug-in/eject (mounts Drive E: in This PC) and system alerts
+                  </div>
+                </div>
+                <span className="text-[11.5px] text-white/65 shrink-0">
+                  {usbConnected ? `${usbDeviceName} (E:)` : 'No USB mounted'}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (usbConnected) ejectUsbDrive();
+                    else connectUsbDrive();
+                  }}
+                  style={{ backgroundColor: personalization.accentColor }}
+                  className="px-3.5 py-1.5 text-[12.5px] text-white hover:brightness-110 cursor-default"
+                >
+                  {usbConnected ? '⏏ Eject USB Drive (E:)' : '🔌 Plug in USB Drive (E:)'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => ejectUsbDrive(true)}
+                  className="px-3.5 py-1.5 bg-[#2b2b2b] hover:bg-[#3a3a3a] border border-white/15 text-[12.5px] cursor-default"
+                >
+                  Test USB Fail
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    notify({
+                      source: 'Windows Security',
+                      title: 'Test notification',
+                      message: 'Windows 10 notification sound and Action Center toast.',
+                      kind: 'success',
+                    })
+                  }
+                  className="px-3.5 py-1.5 bg-[#2b2b2b] hover:bg-[#3a3a3a] border border-white/15 text-[12.5px] cursor-default"
+                >
+                  Test Notification
+                </button>
+                <button
+                  type="button"
+                  onClick={() => playSound('critical-stop', { force: true })}
+                  className="px-3.5 py-1.5 bg-[#2b2b2b] hover:bg-[#3a3a3a] border border-white/15 text-[12.5px] cursor-default"
+                >
+                  Test Critical Stop
+                </button>
+              </div>
+            </div>
+
+            {/* Windows 10 Sound Scheme Browser */}
+            <div className="p-4 bg-[#181818] border border-white/10 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-[14px] font-medium">Windows 10 Sound Scheme</div>
+                  <div className="text-[12px] text-white/60">
+                    All {WIN10_SOUNDS.length} authentic Windows 10 sound effects
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {(
+                    [
+                      { id: 'all', label: 'All' },
+                      { id: 'notification', label: 'Notifications' },
+                      { id: 'device', label: 'USB & Devices' },
+                      { id: 'system', label: 'System' },
+                      { id: 'power', label: 'Logon & Power' },
+                    ] as const
+                  ).map((cat) => (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => setSoundCategory(cat.id)}
+                      style={
+                        soundCategory === cat.id
+                          ? { backgroundColor: personalization.accentColor }
+                          : undefined
+                      }
+                      className={`px-2.5 py-1 text-[11.5px] cursor-default ${
+                        soundCategory === cat.id
+                          ? 'text-white'
+                          : 'bg-[#262626] text-white/75 hover:bg-[#333]'
+                      }`}
+                    >
+                      {cat.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="divide-y divide-white/10 border border-white/10 bg-[#121212] max-h-[320px] overflow-y-auto win10-dark-scroll">
+                {WIN10_SOUNDS.filter(
+                  (s) => soundCategory === 'all' || s.category === soundCategory,
+                ).map((s) => (
+                  <div
+                    key={s.id}
+                    className="flex items-center justify-between gap-3 px-3 py-2 text-[12.5px] hover:bg-white/5"
+                  >
+                    <div className="min-w-0">
+                      <div className="font-medium text-white/95 truncate">{s.label}</div>
+                      <div className="text-[11px] text-white/55 truncate">{s.eventLabel}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => playSound(s.id, { force: true })}
+                      className="px-3 py-1 bg-[#2b2b2b] hover:bg-[#0078d7] border border-white/15 text-[11.5px] text-white shrink-0 cursor-default"
+                    >
+                      ▶ Test
+                    </button>
+                  </div>
+                ))}
               </div>
             </div>
           </div>

@@ -1,6 +1,7 @@
 import type { FsNode } from '../../../db/types';
 import { formatStorageBytes } from '../../../store/useFileSystemStore';
 import type { AppWindow } from '../../../store/useDesktopStore';
+import { playSound } from '../../../utils/soundManager';
 
 export type TerminalProfile = 'cmd' | 'powershell';
 
@@ -913,6 +914,12 @@ export function executeTerminalCommand(rawInput: string, ctx: ExecutionContext):
   if (cmd === 'title') {
     const nextTitle = args.join(' ').trim();
     if (nextTitle) ctx.tabActions.setTitle(nextTitle);
+    return [];
+  }
+
+  // beep
+  if (cmd === 'beep') {
+    playSound('ding');
     return [];
   }
 

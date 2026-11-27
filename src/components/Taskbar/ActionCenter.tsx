@@ -174,17 +174,21 @@ export function ActionCenter({ positioning, sizeClass }: ActionCenterProps) {
                             const { target } = item;
                             if (!target) return;
                             const { openApp: openTargetApp } = useDesktopStore.getState();
-                            if ('fileId' in target) {
+                            if ('folderId' in target) {
                               const { nodes } = useFileSystemStore.getState();
-                              const parentId = nodes[target.fileId]?.parentId ?? target.folderId;
-                              openTargetApp('explorer', nodes[parentId] ? parentId : 'this-pc', target.fileId);
+                              if (target.fileId) {
+                                const parentId = nodes[target.fileId]?.parentId ?? target.folderId;
+                                openTargetApp('explorer', nodes[parentId] ? parentId : 'this-pc', target.fileId);
+                              } else {
+                                openTargetApp('explorer', nodes[target.folderId] ? target.folderId : 'this-pc');
+                              }
                             } else {
                               openTargetApp(target.appId);
                             }
                             setOpen(false);
                           }}
                         >
-                          {'fileId' in item.target ? 'Show in File Explorer' : `Open ${item.source}`}
+                          {'folderId' in item.target ? 'Show in File Explorer' : `Open ${item.source}`}
                         </button>
                       )}
                     </div>

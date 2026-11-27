@@ -56,6 +56,9 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
   const setWindowTitle = useDesktopStore((state) => state.setWindowTitle);
   const explorerStartFolderId = useDesktopStore((state) => state.explorerStartFolderId);
   const explorerReveal = useDesktopStore((state) => state.explorerReveal);
+  const usbConnected = useDesktopStore((state) => state.usbConnected);
+  const connectUsbDrive = useDesktopStore((state) => state.connectUsbDrive);
+  const ejectUsbDrive = useDesktopStore((state) => state.ejectUsbDrive);
   const appliedReveal = useRef<typeof explorerReveal>(null);
 
   const [history, setHistory] = useState<string[]>([initialFolderId]);
@@ -98,6 +101,14 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
 
   const currentFolderId = history[historyIdx] ?? 'this-pc';
   const currentNode = nodes[currentFolderId] ?? nodes['this-pc'];
+
+  useEffect(() => {
+    if (currentFolderId !== 'this-pc' && !nodes[currentFolderId]) {
+      setHistory(['this-pc']);
+      setHistoryIdx(0);
+      setSelectedIds([]);
+    }
+  }, [currentFolderId, nodes]);
 
   useEffect(() => {
     void refreshStorageStats();
@@ -891,6 +902,20 @@ export function FileExplorerApp({ windowId, initialFolderId }: FileExplorerAppPr
             >
               <img src="/assets/icons/explorer/disk-sm.png" alt="" className="w-4 h-4 object-contain" />
               <span>Local Disk (D:)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (usbConnected) ejectUsbDrive();
+                else connectUsbDrive();
+              }}
+              title={usbConnected ? 'Safely eject USB Drive (E:)' : 'Plug in Virtual USB Drive (E:)'}
+              className="flex items-center gap-1.5 px-2.5 py-1 text-[12px] border border-transparent hover:bg-[#333333] hover:border-[#4d4d4d] cursor-default"
+            >
+              <img src="/assets/icons/usb-drive.svg" alt="" className="w-4 h-4 object-contain" />
+              <span>{usbConnected ? 'Eject USB (E:)' : 'Plug in USB (E:)'}</span>
             </button>
 
             <div className="h-5 w-px bg-[#3b3b3b] mx-1" />

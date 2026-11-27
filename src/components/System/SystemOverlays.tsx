@@ -3,6 +3,7 @@ import { CheckmarkCircleRegular, DismissRegular, ErrorCircleRegular } from '@flu
 import { getTaskbarInsets, useDesktopStore } from '../../store/useDesktopStore';
 import { useFileSystemStore } from '../../store/useFileSystemStore';
 import { useNotificationStore } from '../../store/useNotificationStore';
+import { playSound } from '../../utils/soundManager';
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -88,11 +89,14 @@ function RunDialog() {
       openSettingsTab('Taskbar');
     } else if (lower === 'ms-settings:display') {
       openSettingsTab('Display');
+    } else if (lower === 'ms-settings:sound' || lower === 'mmsys.cpl') {
+      openSettingsTab('Sound');
     } else if (lower === 'ms-settings:' || lower === 'settings' || lower === 'control') {
       openApp('settings');
     } else if (lower === 'lock') {
       setLockScreenOpen(true);
     } else {
+      playSound('critical-stop');
       setErrorMsg(`Windows cannot find '${raw}'. Make sure you typed the name correctly, and then try again.`);
       return;
     }
@@ -323,6 +327,7 @@ function LockScreenOverlay() {
   const handleAttemptSignIn = (e?: FormEvent) => {
     e?.preventDefault();
     if (lockPin && pinDraft !== lockPin) {
+      playSound('exclamation');
       setPinError('The PIN is incorrect. Try again.');
       setPinDraft('');
       pinInputRef.current?.focus();
@@ -525,7 +530,7 @@ function PowerOverlay() {
     if (powerState === 'restarting') {
       const t = window.setTimeout(() => {
         setPowerState('running');
-        setLockScreenOpen(true);
+        setLockScreenOpen(true, true);
       }, 1800);
       return () => window.clearTimeout(t);
     }
@@ -546,7 +551,7 @@ function PowerOverlay() {
         aria-label="Sleep Mode"
         onClick={() => {
           setPowerState('running');
-          setLockScreenOpen(true);
+          setLockScreenOpen(true, true);
         }}
         className="fixed inset-0 z-[195] bg-black flex flex-col items-center justify-center text-white/70 select-none cursor-pointer"
       >
@@ -568,7 +573,7 @@ function PowerOverlay() {
           onClick={() => {
             setPoweredOff(false);
             setPowerState('running');
-            setLockScreenOpen(true);
+            setLockScreenOpen(true, true);
           }}
           className="px-5 py-2 bg-[#0078d7] hover:bg-[#1084e0] text-[13px] text-white cursor-default"
         >
@@ -734,10 +739,14 @@ function ToastContainer() {
             onClick={() => {
               if (toast.target) {
                 const { openApp } = useDesktopStore.getState();
-                if ('fileId' in toast.target) {
+                if ('folderId' in toast.target) {
                   const { nodes } = useFileSystemStore.getState();
-                  const parentId = nodes[toast.target.fileId]?.parentId ?? toast.target.folderId;
-                  openApp('explorer', nodes[parentId] ? parentId : 'this-pc', toast.target.fileId);
+                  if (toast.target.fileId) {
+                    const parentId = nodes[toast.target.fileId]?.parentId ?? toast.target.folderId;
+                    openApp('explorer', nodes[parentId] ? parentId : 'this-pc', toast.target.fileId);
+                  } else {
+                    openApp('explorer', nodes[toast.target.folderId] ? toast.target.folderId : 'this-pc');
+                  }
                 } else {
                   openApp(toast.target.appId);
                 }

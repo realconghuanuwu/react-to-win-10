@@ -70,6 +70,7 @@ export interface TaskbarSettings {
 export type PersonalizationTab =
   | 'Home'
   | 'Display'
+  | 'Sound'
   | 'Background'
   | 'Colors'
   | 'Lock screen'

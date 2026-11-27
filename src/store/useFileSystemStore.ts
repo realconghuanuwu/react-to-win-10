@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { getRecycleBinIcon } from '../data/desktopApps';
 import type { FsNode, FsNodeKind, ShortcutTarget } from '../db/types';
 import { getOwningDriveId } from '../utils/fileStorage';
+import { playSound } from '../utils/soundManager';
 import {
   DEFAULT_IDB_QUOTA_BYTES,
   estimateStorageStats,
@@ -266,6 +267,8 @@ interface FileSystemState {
   deleteNodesPermanently: (ids: string[]) => void;
   restoreNodes: (ids: string[]) => void;
   emptyRecycleBin: () => void;
+  mountUsbDrive: (label?: string) => void;
+  unmountUsbDrive: () => void;
   refreshStorageStats: () => Promise<void>;
 }
 
@@ -858,6 +861,7 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
     },
 
     emptyRecycleBin: () => {
+      let emptied = false;
       set((state) => {
         const nextNodes = { ...state.nodes };
         const toRemove = new Set<string>();
@@ -871,12 +875,72 @@ export const useFileSystemStore = create<FileSystemState>((set, get) => {
           if (n.parentId === 'recycle-bin') collect(n.id);
         });
         if (toRemove.size === 0) return state;
+        emptied = true;
         toRemove.forEach((id) => {
           delete nextNodes[id];
         });
         const syncedNodes = syncRecycleBinIcon(nextNodes);
         const storageUsedBytes = persistNodes(syncedNodes, toRemove);
         return { nodes: syncedNodes, storageUsedBytes };
+      });
+      if (emptied) {
+        playSound('recycle');
+      }
+    },
+
+    mountUsbDrive: (label = 'USB Drive (E:)') => {
+      set((state) => {
+        const now = Date.now();
+        const nextNodes: Record<string, FsNode> = {
+          ...state.nodes,
+          'drive-e': {
+            id: 'drive-e',
+            parentId: 'this-pc',
+            name: label,
+            kind: 'drive',
+            icon: '/assets/icons/usb-drive.svg',
+            isSystem: true,
+            createdAt: now,
+            modifiedAt: now,
+          },
+        };
+        const hasAnyChild = Object.values(nextNodes).some((n) => n.parentId === 'drive-e');
+        if (!hasAnyChild) {
+          nextNodes['usb-readme'] = {
+            id: 'usb-readme',
+            parentId: 'drive-e',
+            name: 'USB_Readme.txt',
+            kind: 'file',
+            icon: '/assets/icons/txt-file.svg',
+            content:
+              'SanDisk Ultra USB 3.0 (E:)\r\n\r\nRemovable storage mounted in Windows 10 Online Simulator.\r\nYou can copy files here or safely eject from the taskbar tray.',
+            isSystem: false,
+            createdAt: now,
+            modifiedAt: now,
+          };
+        }
+        const storageUsedBytes = persistNodes(nextNodes);
+        return { nodes: nextNodes, storageUsedBytes };
+      });
+    },
+
+    unmountUsbDrive: () => {
+      set((state) => {
+        if (!state.nodes['drive-e']) return state;
+        const nextNodes = { ...state.nodes };
+        const toRemove = new Set<string>();
+        const collect = (id: string) => {
+          toRemove.add(id);
+          Object.values(nextNodes).forEach((n) => {
+            if (n.parentId === id) collect(n.id);
+          });
+        };
+        collect('drive-e');
+        toRemove.forEach((id) => {
+          delete nextNodes[id];
+        });
+        const storageUsedBytes = persistNodes(nextNodes, toRemove);
+        return { nodes: nextNodes, storageUsedBytes };
       });
     },
 

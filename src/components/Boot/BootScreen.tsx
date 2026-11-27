@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { DESKTOP_APPS } from '../../data/desktopApps';
 import { useDesktopStore } from '../../store/useDesktopStore';
 import { useFileSystemStore } from '../../store/useFileSystemStore';
+import { playSound, preloadCoreSounds } from '../../utils/soundManager';
 
 const CRITICAL_WALLPAPERS = [
   '/assets/wallpapers/lock-screen.jpg',
@@ -43,6 +44,7 @@ export function BootScreen() {
 
   useEffect(() => {
     let cancelled = false;
+    preloadCoreSounds();
     const desktopIcons = DESKTOP_APPS.filter((a) => a.showOnDesktop !== false).map((a) => a.icon);
     const assetUrls = Array.from(new Set([...desktopIcons, ...CRITICAL_WALLPAPERS]));
     const total = assetUrls.length + 1;
@@ -79,6 +81,7 @@ export function BootScreen() {
       if (cancelled) return;
       setProgress(100);
       setFadingOut(true);
+      playSound('startup');
       window.setTimeout(() => {
         if (!cancelled) {
           setDismissed(true);

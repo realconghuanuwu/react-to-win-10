@@ -16,6 +16,9 @@ import {
   savePersonalizationSettings,
   saveTaskbarSettings,
 } from '../db/win10Db';
+import { initSoundUnlock, playSound, registerSoundSettingsProvider } from '../utils/soundManager';
+import { useFileSystemStore } from './useFileSystemStore';
+import { notify } from './useNotificationStore';
 
 export type { GridSlot, PersonalizationSettings, PersonalizationTab, StartMenuSettings, TaskbarSettings };
 
@@ -266,8 +269,16 @@ interface DesktopState {
   personalizationSettings: PersonalizationSettings;
   systemVolume: number;
   isSystemMuted: boolean;
+  soundEffectsEnabled: boolean;
+  windowSoundsEnabled: boolean;
+  usbConnected: boolean;
+  usbDeviceName: string;
   setSystemVolume: (volume: number) => void;
   toggleSystemMute: () => void;
+  setSoundEffectsEnabled: (enabled: boolean) => void;
+  setWindowSoundsEnabled: (enabled: boolean) => void;
+  connectUsbDrive: (deviceName?: string) => void;
+  ejectUsbDrive: (simulateError?: boolean) => void;
   setAppVolume: (appId: string, volume: number) => void;
   setBrightness: (brightness: number) => void;
   setDisplayScale: (scale: 100 | 125 | 150) => void;
@@ -286,7 +297,7 @@ interface DesktopState {
   setAltTabState: (open: boolean, index?: number) => void;
   setRunDialogOpen: (open: boolean) => void;
   addRunHistory: (cmd: string) => void;
-  setLockScreenOpen: (open: boolean) => void;
+  setLockScreenOpen: (open: boolean, silent?: boolean) => void;
   setPowerState: (state: PowerState) => void;
   setActionCenterOpen: (open: boolean) => void;
   setSearchOpen: (open: boolean) => void;
@@ -568,6 +579,24 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
       return false;
     }
   })(),
+  soundEffectsEnabled: (() => {
+    try {
+      const raw = typeof window !== 'undefined' ? window.localStorage.getItem('win10_sound_effects_v1') : null;
+      return raw === null ? true : raw === 'true';
+    } catch {
+      return true;
+    }
+  })(),
+  windowSoundsEnabled: (() => {
+    try {
+      const raw = typeof window !== 'undefined' ? window.localStorage.getItem('win10_window_sounds_v1') : null;
+      return raw === 'true';
+    } catch {
+      return false;
+    }
+  })(),
+  usbConnected: false,
+  usbDeviceName: 'SanDisk Ultra USB 3.0',
 
   setSystemVolume: (volume) =>
     set((state) => {
@@ -587,7 +616,8 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
       };
     }),
 
-  toggleSystemMute: () =>
+  toggleSystemMute: () => {
+    const wasMuted = get().isSystemMuted;
     set((state) => {
       const nextMuted = !state.isSystemMuted;
       try {
@@ -599,7 +629,70 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
         // ignore
       }
       return { isSystemMuted: nextMuted };
-    }),
+    });
+    if (wasMuted && get().systemVolume > 0) {
+      playSound('background');
+    }
+  },
+
+  setSoundEffectsEnabled: (enabled) => {
+    try {
+      window.localStorage.setItem('win10_sound_effects_v1', String(enabled));
+    } catch {
+      // ignore
+    }
+    set({ soundEffectsEnabled: enabled });
+  },
+
+  setWindowSoundsEnabled: (enabled) => {
+    try {
+      window.localStorage.setItem('win10_window_sounds_v1', String(enabled));
+    } catch {
+      // ignore
+    }
+    set({ windowSoundsEnabled: enabled });
+  },
+
+  connectUsbDrive: (deviceName) => {
+    const labelName = deviceName?.trim() || get().usbDeviceName || 'SanDisk Ultra USB 3.0';
+    useFileSystemStore.getState().mountUsbDrive('USB Drive (E:)');
+    set({ usbConnected: true, usbDeviceName: labelName });
+    playSound('usb-insert');
+    notify({
+      source: 'AutoPlay',
+      title: 'USB Drive (E:) connected',
+      message: `${labelName} — Click to open in File Explorer.`,
+      kind: 'success',
+      target: { folderId: 'drive-e' },
+      sound: false,
+    });
+  },
+
+  ejectUsbDrive: (simulateError = false) => {
+    const state = get();
+    if (simulateError) {
+      playSound('usb-fail');
+      notify({
+        source: 'Windows Explorer',
+        title: 'Problem Ejecting USB Mass Storage Device',
+        message: 'This device is currently in use. Close any programs using it and try again.',
+        kind: 'error',
+        sound: false,
+      });
+      return;
+    }
+    if (!state.usbConnected && !useFileSystemStore.getState().nodes['drive-e']) return;
+    useFileSystemStore.getState().unmountUsbDrive();
+    set({ usbConnected: false });
+    playSound('usb-remove');
+    notify({
+      source: 'Windows Explorer',
+      title: 'Safe To Remove Hardware',
+      message: `The '${state.usbDeviceName}' device can now be safely removed from the computer.`,
+      kind: 'success',
+      sound: false,
+    });
+  },
   setAppVolume: (appId, volume) =>
     set((state) => ({
       appVolumes: {
@@ -777,7 +870,8 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
       };
     }),
 
-  setLockScreenOpen: (isLockScreenOpen) =>
+  setLockScreenOpen: (isLockScreenOpen, silent = false) => {
+    const prev = get();
     set({
       isLockScreenOpen,
       isStartMenuOpen: false,
@@ -786,14 +880,30 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
       winXMenuPos: null,
       contextMenuPos: null,
       taskbarContextMenuPos: null,
-    }),
+    });
+    if (silent) return;
+    if (isLockScreenOpen && !prev.isLockScreenOpen && prev.powerState === 'running') {
+      playSound('logoff');
+    } else if (!isLockScreenOpen && prev.isLockScreenOpen) {
+      playSound('unlock');
+    }
+  },
 
-  setPowerState: (powerState) =>
+  setPowerState: (powerState) => {
+    const prevPower = get().powerState;
     set({
       powerState,
       isStartMenuOpen: false,
       winXMenuPos: null,
-    }),
+    });
+    if (powerState === 'sleeping' && prevPower === 'running') {
+      playSound('logoff');
+    } else if ((powerState === 'shutting-down' || powerState === 'restarting') && prevPower !== powerState) {
+      playSound('shutdown');
+    } else if (powerState === 'running' && prevPower !== 'running') {
+      playSound('logon');
+    }
+  },
 
   setActionCenterOpen: (isActionCenterOpen) =>
     set({
@@ -1622,7 +1732,7 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
       };
     }),
 
-  minimizeWindow: (id) =>
+  minimizeWindow: (id) => {
     set((state) => {
       const updated = state.windows.map((w) =>
         w.id === id ? { ...w, isMinimized: true } : w,
@@ -1631,9 +1741,11 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
         windows: updated,
         activeAppId: getTopVisibleWindowId(updated, state.activeDesktopId),
       };
-    }),
+    });
+    playSound('minimize', { isWindowSound: true });
+  },
 
-  toggleMaximizeWindow: (id) =>
+  toggleMaximizeWindow: (id) => {
     set((state) => {
       const nextZ = state.topZIndex + 1;
       return {
@@ -1645,7 +1757,9 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
         activeAppId: id,
         topZIndex: nextZ,
       };
-    }),
+    });
+    playSound('restore', { isWindowSound: true });
+  },
 
   snapActiveWindow: (side) => {
     const { activeAppId, windows, snapWindow } = get();
@@ -2034,6 +2148,26 @@ export const useDesktopStore = create<DesktopState>((set, get) => ({
 }));
 
 if (typeof window !== 'undefined') {
+  registerSoundSettingsProvider(() => {
+    const s = useDesktopStore.getState();
+    return {
+      systemVolume: s.systemVolume,
+      isSystemMuted: s.isSystemMuted,
+      systemSoundsVolume: s.appVolumes['system-sounds'] ?? 100,
+      soundEffectsEnabled: s.soundEffectsEnabled,
+      windowSoundsEnabled: s.windowSoundsEnabled,
+      focusAssist: s.focusAssist,
+    };
+  });
+  initSoundUnlock();
+
+  useFileSystemStore.subscribe((fsState) => {
+    const hasDriveE = Boolean(fsState.nodes['drive-e']);
+    if (useDesktopStore.getState().usbConnected !== hasDriveE) {
+      useDesktopStore.setState({ usbConnected: hasDriveE });
+    }
+  });
+
   useDesktopStore.subscribe((state, previous) => {
     if (state.windows === previous.windows) return;
     for (const current of state.windows) {
