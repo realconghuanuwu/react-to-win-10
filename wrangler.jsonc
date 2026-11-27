@@ -3,6 +3,9 @@
   "name": "react-to-win-10",
   "main": "worker/index.ts",
   "compatibility_date": "2026-01-01",
+  "vars": {
+    "YT_API_ORIGIN": "https://react-win-api.dftactics.win"
+  },
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",

@@ -6,6 +6,7 @@ import {
   useState,
   type FormEvent,
 } from 'react';
+import { apiClient } from '../../api/http';
 import { useDesktopStore } from '../../store/useDesktopStore';
 import { formatStorageBytes, useFileSystemStore } from '../../store/useFileSystemStore';
 import { openVirtualFile } from '../../utils/openVirtualFile';
@@ -230,20 +231,21 @@ export function ChromeApp({ windowId }: ChromeAppProps) {
     [tabs, activeTabId],
   );
 
-  // Detect whether Vite browse proxy middleware is available
+  // Detect whether browse proxy endpoint is available
   useEffect(() => {
-    let cancelled = false;
-    fetch('/api/browse-health')
+    const controller = new AbortController();
+    apiClient
+      .get<{ ok?: boolean }>('/api/browse-health', { signal: controller.signal })
       .then((res) => {
-        if (!cancelled && res.ok) {
+        if (!controller.signal.aborted && res.data?.ok === true) {
           setProxyAvailable(true);
         }
       })
       .catch(() => {
-        if (!cancelled) setProxyAvailable(false);
+        if (!controller.signal.aborted) setProxyAvailable(false);
       });
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, []);
 

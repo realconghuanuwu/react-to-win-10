@@ -1,16 +1,60 @@
 import { extractYouTubeVideos, injectProxyBridge } from '../shared/browseProxy';
 
 interface Env {
+  YT_API_ORIGIN?: string;
   ASSETS: {
     fetch: (request: Request) => Promise<Response>;
   };
 }
 
+const DEFAULT_YT_API_ORIGIN = 'https://react-win-api.dftactics.win';
+
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': '*',
+  'Access-Control-Expose-Headers': 'X-File-Name, Content-Disposition, Content-Length',
 };
+
+async function handleYtProxy(request: Request, url: URL, env: Env): Promise<Response> {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
+
+  const origin = (env.YT_API_ORIGIN || DEFAULT_YT_API_ORIGIN).replace(/\/+$/, '');
+  const targetUrl = `${origin}${url.pathname}${url.search}`;
+
+  try {
+    const forwardHeaders = new Headers();
+    const contentType = request.headers.get('content-type');
+    if (contentType) {
+      forwardHeaders.set('Content-Type', contentType);
+    }
+
+    const hasBody = request.method !== 'GET' && request.method !== 'HEAD';
+    const upstream = await fetch(targetUrl, {
+      method: request.method,
+      headers: forwardHeaders,
+      body: hasBody ? request.body : undefined,
+    });
+
+    const resHeaders = new Headers(CORS_HEADERS);
+    for (const header of ['content-type', 'content-length', 'x-file-name', 'content-disposition']) {
+      const value = upstream.headers.get(header);
+      if (value) {
+        resHeaders.set(header, value);
+      }
+    }
+
+    return new Response(upstream.body, {
+      status: upstream.status,
+      headers: resHeaders,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'YouTube backend is unreachable.';
+    return Response.json({ error: message }, { status: 502, headers: CORS_HEADERS });
+  }
+}
 
 async function handleBrowse(request: Request, url: URL): Promise<Response> {
   if (request.method === 'OPTIONS') {
@@ -100,6 +144,10 @@ async function handleBrowse(request: Request, url: URL): Promise<Response> {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+
+    if (url.pathname.startsWith('/api/yt/')) {
+      return handleYtProxy(request, url, env);
+    }
 
     if (url.pathname === '/api/browse-health') {
       return Response.json({ ok: true }, { headers: CORS_HEADERS });

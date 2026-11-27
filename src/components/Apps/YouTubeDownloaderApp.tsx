@@ -1,17 +1,16 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import {
+  downloadYtMedia,
+  fetchYtHealth,
+  fetchYtVideoInfo,
+  type VideoInfo,
+  type YtHealthStatus,
+} from '../../api/ytApi';
 import { formatStorageBytes, useFileSystemStore } from '../../store/useFileSystemStore';
 import { useDesktopStore } from '../../store/useDesktopStore';
 import { notify } from '../../store/useNotificationStore';
 
 const notificationSource = 'YouTube Downloader';
-
-interface VideoInfo {
-  title: string;
-  channel: string;
-  duration: number;
-  thumbnail: string;
-  webpageUrl: string;
-}
 
 interface DownloadHistoryItem {
   id: string;
@@ -25,6 +24,18 @@ interface DownloadHistoryItem {
 }
 
 type SaveTarget = 'pc' | 'win10' | 'both';
+
+function isValidHttpUrl(input: string): boolean {
+  try {
+    const parsed = new URL(input.trim());
+    return (
+      (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
+      parsed.hostname.includes('.')
+    );
+  } catch {
+    return false;
+  }
+}
 
 function formatDuration(seconds: number): string {
   if (!seconds || seconds <= 0) return '0:00';
@@ -51,9 +62,7 @@ export function YouTubeDownloaderApp() {
   const openApp = useDesktopStore((state) => state.openApp);
   const openMediaFile = useDesktopStore((state) => state.openMediaFile);
 
-  const [health, setHealth] = useState<{ ok: boolean; ytdlp: string | null; ffmpeg: boolean } | null>(
-    null,
-  );
+  const [health, setHealth] = useState<YtHealthStatus | null>(null);
   const [url, setUrl] = useState('');
   const [mode, setMode] = useState<'video' | 'audio'>('video');
   const [videoQuality, setVideoQuality] = useState<'best' | '1080' | '720' | '480'>('best');
@@ -69,46 +78,94 @@ export function YouTubeDownloaderApp() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
   const [history, setHistory] = useState<DownloadHistoryItem[]>([]);
+  const immediateFetchRef = useRef(false);
+  const lastFetchedUrlRef = useRef('');
+  const infoAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    let active = true;
-    fetch('/api/yt/health')
-      .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((data) => {
-        if (active) setHealth(data);
-      })
-      .catch(() => {
-        if (active) setHealth({ ok: false, ytdlp: null, ffmpeg: false });
-      });
+    const controller = new AbortController();
+    fetchYtHealth(controller.signal).then((data) => {
+      if (!controller.signal.aborted) {
+        setHealth(data);
+      }
+    });
     return () => {
-      active = false;
+      controller.abort();
     };
   }, []);
 
-  const handleFetchInfo = async (e?: FormEvent) => {
-    if (e) e.preventDefault();
-    const trimmed = url.trim();
-    if (!trimmed) return;
+  const loadVideoInfo = useCallback(async (targetUrl: string) => {
+    infoAbortRef.current?.abort();
+    const controller = new AbortController();
+    infoAbortRef.current = controller;
+
+    lastFetchedUrlRef.current = targetUrl;
     setErrorMessage(null);
     setStatusMessage('Fetching video metadata with yt-dlp...');
     setIsFetchingInfo(true);
     try {
-      const res = await fetch('/api/yt/info', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: trimmed }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to fetch video info');
-      }
-      setVideoInfo(data as VideoInfo);
+      const data = await fetchYtVideoInfo(targetUrl, controller.signal);
+      if (controller.signal.aborted) return;
+      setVideoInfo(data);
       setStatusMessage(null);
     } catch (err) {
+      if (controller.signal.aborted) return;
+      lastFetchedUrlRef.current = '';
+      setVideoInfo(null);
       setErrorMessage(err instanceof Error ? err.message : 'Unable to fetch video info.');
       setStatusMessage(null);
     } finally {
+      if (infoAbortRef.current === controller) {
+        setIsFetchingInfo(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const trimmed = url.trim();
+    if (!trimmed) {
+      infoAbortRef.current?.abort();
+      lastFetchedUrlRef.current = '';
+      setVideoInfo(null);
       setIsFetchingInfo(false);
+      return;
+    }
+
+    if (!isValidHttpUrl(trimmed)) {
+      infoAbortRef.current?.abort();
+      lastFetchedUrlRef.current = '';
+      setVideoInfo(null);
+      setIsFetchingInfo(false);
+      return;
+    }
+
+    if (!health?.ok || trimmed === lastFetchedUrlRef.current) {
+      return;
+    }
+
+    const delay = immediateFetchRef.current ? 0 : 450;
+    immediateFetchRef.current = false;
+    const timer = window.setTimeout(() => {
+      void loadVideoInfo(trimmed);
+    }, delay);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [url, health?.ok, loadVideoInfo]);
+
+  useEffect(() => {
+    return () => {
+      infoAbortRef.current?.abort();
+    };
+  }, []);
+
+  const handleUrlSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    const trimmed = url.trim();
+    if (!trimmed || !isValidHttpUrl(trimmed) || !health?.ok) return;
+    if (trimmed !== lastFetchedUrlRef.current) {
+      void loadVideoInfo(trimmed);
     }
   };
 
@@ -127,25 +184,7 @@ export function YouTubeDownloaderApp() {
     let downloadUrl: string | undefined;
     try {
       const quality = mode === 'audio' ? audioQuality : videoQuality;
-      const res = await fetch('/api/yt/download', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: trimmed, mode, quality }),
-      });
-
-      if (!res.ok) {
-        const errData = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(errData.error || `Download failed (${res.status})`);
-      }
-
-      const rawHeaderName = res.headers.get('X-File-Name');
-      const fileName = rawHeaderName
-        ? decodeURIComponent(rawHeaderName)
-        : mode === 'audio'
-          ? `audio.${audioQuality}`
-          : 'video.mp4';
-
-      const blob = await res.blob();
+      const { blob, fileName } = await downloadYtMedia({ url: trimmed, mode, quality });
       const blobUrl = URL.createObjectURL(blob);
       downloadUrl = blobUrl;
 
@@ -248,22 +287,42 @@ export function YouTubeDownloaderApp() {
       {/* Main Content */}
       <div className="flex-1 overflow-y-auto p-5 space-y-4">
         {/* URL Input */}
-        <form onSubmit={handleFetchInfo} className="flex gap-2">
+        <form onSubmit={handleUrlSubmit} className="relative">
           <input
             type="url"
             value={url}
+            onPaste={() => {
+              immediateFetchRef.current = true;
+            }}
             onChange={(e) => setUrl(e.target.value)}
             placeholder="Paste YouTube video URL (e.g. https://www.youtube.com/watch?v=...)"
             aria-label="YouTube URL"
-            className="flex-1 h-[34px] px-3 bg-[#262626] border border-white/20 focus:border-[#0078d7] text-[12.5px] text-white outline-none placeholder:text-white/40"
+            className={[
+              'w-full h-[34px] pl-3 bg-[#262626] border border-white/20 focus:border-[#0078d7] text-[12.5px] text-white outline-none placeholder:text-white/40',
+              isFetchingInfo ? 'pr-24' : url ? 'pr-8' : 'pr-3',
+            ].join(' ')}
           />
-          <button
-            type="submit"
-            disabled={isFetchingInfo || isDownloading || !url.trim()}
-            className="px-4 h-[34px] bg-[#333333] hover:bg-[#444444] disabled:opacity-45 border border-white/15 text-[12.5px] text-white cursor-default"
-          >
-            {isFetchingInfo ? 'Fetching...' : 'Get Info'}
-          </button>
+          {isFetchingInfo ? (
+            <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-[#76b9ed] pointer-events-none">
+              Fetching...
+            </span>
+          ) : (
+            url && (
+              <button
+                type="button"
+                onClick={() => {
+                  setUrl('');
+                  setErrorMessage(null);
+                  setStatusMessage(null);
+                }}
+                aria-label="Clear URL"
+                title="Clear URL"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center text-white/55 hover:text-white text-[13px] cursor-default"
+              >
+                ×
+              </button>
+            )
+          )}
         </form>
 
         {/* Video Info Card */}

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { YouTubeVideoItem } from '../../../shared/browseProxy';
+import { apiClient } from '../../api/http';
 import { useDesktopStore } from '../../store/useDesktopStore';
 
 interface YouTubeViewProps {
@@ -143,14 +144,17 @@ export function YouTubeView({
     'popular music gaming tech';
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
     setLoading(true);
 
-    fetch(`/api/youtube?q=${encodeURIComponent(effectiveQuery)}`)
-      .then((res) => res.json() as Promise<{ videos?: YouTubeVideoItem[] }>)
-      .then((data) => {
-        if (cancelled) return;
-        const list = data.videos ?? [];
+    apiClient
+      .get<{ videos?: YouTubeVideoItem[] }>('/api/youtube', {
+        params: { q: effectiveQuery },
+        signal: controller.signal,
+      })
+      .then((res) => {
+        if (controller.signal.aborted) return;
+        const list = res.data?.videos ?? [];
         setVideos(list);
         setLoading(false);
         if (videoId) {
@@ -163,11 +167,11 @@ export function YouTubeView({
         }
       })
       .catch(() => {
-        if (!cancelled) setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       });
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [effectiveQuery, videoId, searchQuery, reloadNonce]);
 
